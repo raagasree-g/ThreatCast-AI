@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Raw CTU13 files - too large for Git
+data/CTU13/*/*.binetflow
+
+# Old model checkpoints
+*.pt
+
+# Temporary files
+*.tmp
