@@ -143,7 +143,7 @@ export const fallbackProvider = {
           id: 'kpi-confidence',
           label: 'Forecast Confidence',
           value: activeScenario === 'exfiltration_crisis' ? '96%' : activeScenario === 'lateral_movement_wave' ? '94%' : '88%',
-          context: 'LSTM-B + FastRP Graph Model',
+          context: 'CTU13 LSTM Early Warning',
           trend: { direction: 'up', value: 'Grounded in topological context' },
           status: 'safe',
         },
@@ -810,44 +810,15 @@ export const fallbackProvider = {
   getIncidents: async () => {
     const now = new Date().toISOString();
     return {
-      total: 4,
-      incidents: [
-        {
-          id: 'INC-8042',
-          title: 'Coordinated Lateral Movement Campaign targeting Domain Controller',
-          detected_at: '15:32:10',
-          current_stage: activeScenario === 'exfiltration_crisis' ? 'Collection & Staging (Observed)' : 'Privilege Escalation (Observed)',
-          predicted_progression: 'T+1: Lateral Movement -> T+2: Credential Access -> T+3: Exfiltration',
-          affected_assets: ['User-014', 'Endpoint-07', 'Server-03'],
-          risk_level: 'CRITICAL',
-          risk_score: activeScenario === 'exfiltration_crisis' ? 98 : 88,
-          status: 'Forecasted',
-          model_confidence: 0.94,
-          rule_result: 'TCP SYN Port Sweep (Medium)',
-          has_disagreement: true,
-          recommended_action:
-            'Isolate Endpoint-07 host network adapter; revoke Kerberos TGT ticket for User-014; block SMB port 445 cross-subnet relay to Server-03.',
-          timeline: [
-            { time: '15:25:34', title: 'C2 Beaconing Detected', description: 'Outbound encrypted TLS beacons observed from Endpoint-07 to 198.51.100.42.', type: 'observed' },
-            { time: '15:30:12', title: 'Port Scan Rule Matched', description: 'Deterministic Rule Engine flagged rapid TCP SYN packet burst across ports 135/445.', type: 'rule_alert' },
-            { time: '15:32:10', title: 'Token Impersonation & Privilege Escalation', description: 'Endpoint telemetry confirmed SeDebugPrivilege enabled on lsass.exe process handle.', type: 'observed' },
-            { time: '15:44:00 (Est.)', title: 'Forecasted T+1 Lateral Movement Hop', description: 'LSTM-B predicts 94% likelihood of SMB/RPC administrative share access on Server-03.', type: 'forecasted' },
-          ],
-          containment_playbook: [
-            'Step 1: Execute automated host isolation script for Endpoint-07.',
-            'Step 2: Force global revocation of Kerberos Ticket Granting Tickets (TGT) for User-014 in Active Directory.',
-            'Step 3: Apply micro-segmentation firewall rule dropping port 445/135 between Subnet 10.0.2.0/24 and 10.0.3.0/24.',
-            'Step 4: Enable Enhanced LSASS Audit Logging on Domain Controller Server-03.',
-          ],
-        },
-      ],
+      total: 0,
+      incidents: [],
       last_updated: now,
     };
   },
 
   getIncident: async (id) => {
     const list = await fallbackProvider.getIncidents();
-    const inc = list.incidents.find((i) => i.id.toUpperCase() === id.toUpperCase()) || list.incidents[0];
+    const inc = list.incidents.find((i) => i.id.toUpperCase() === id.toUpperCase()) || null;
     return { incident: inc };
   },
 

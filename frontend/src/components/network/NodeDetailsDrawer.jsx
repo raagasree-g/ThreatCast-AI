@@ -64,11 +64,11 @@ export default function NodeDetailsDrawer({ node, onClose }) {
         </div>
       </div>
 
-      {/* Predicted Next Action (Core Innovation) */}
+      {/* Topological Action Context */}
       <div className="space-y-1.5">
         <span className="text-[11px] font-mono uppercase font-bold text-[#b45309] flex items-center gap-1">
           <Sparkles className="w-3.5 h-3.5 text-[#d97706]" />
-          Neural AI Forecasted Next Action:
+          Topological Action Context:
         </span>
         <div className="p-3 rounded-xl bg-[#fffbeb] border border-[#fde68a] text-xs text-[#78350f] font-bold leading-relaxed shadow-2xs">
           {node.predicted_action}
@@ -89,15 +89,12 @@ export default function NodeDetailsDrawer({ node, onClose }) {
         </div>
       </div>
 
-      {/* Proactive Action Buttons */}
+      {/* Proactive Action Notice */}
       <div className="pt-2 flex flex-col gap-2">
-        <button
-          onClick={() => alert(`Proactive Quarantine command staged for ${node.id} (${node.ip}).`)}
-          className="w-full py-2.5 px-4 rounded-xl bg-[#b45309] hover:bg-[#92400e] text-white text-xs font-bold shadow-xs transition-all active:scale-95 flex items-center justify-center gap-2 font-mono"
-        >
-          <Lock className="w-3.5 h-3.5" />
-          Pre-emptively Isolate Asset ({node.id})
-        </button>
+        <div className="w-full py-2.5 px-4 rounded-xl bg-[#fcfaf7] border border-[#ebdcc7] text-[#7a644c] text-[11px] font-mono flex items-center justify-center gap-2">
+          <Lock className="w-3.5 h-3.5 text-[#998165]" />
+          <span>Asset isolation is not driven by aggregate CTU13 LSTM state model</span>
+        </div>
       </div>
     </div>
   );

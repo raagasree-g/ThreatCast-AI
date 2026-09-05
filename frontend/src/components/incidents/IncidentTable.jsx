@@ -14,8 +14,14 @@ export default function IncidentTable({
 }) {
   if (!incidents || incidents.length === 0) {
     return (
-      <div className="p-8 text-center bg-white rounded-2xl border border-[#ebdcc7] text-[#7a644c] text-xs">
-        No active incidents tracked in this filter range.
+      <div className="p-12 text-center bg-white rounded-2xl border border-[#ebdcc7] shadow-xs space-y-3">
+        <div className="w-12 h-12 rounded-full bg-[#fcfaf7] border border-[#ebdcc7] flex items-center justify-center text-[#b45309] mx-auto">
+          <ShieldAlert className="w-6 h-6" />
+        </div>
+        <h3 className="text-sm font-bold text-[#221207]">No persistent incidents are currently stored.</h3>
+        <p className="text-xs text-[#7a644c] max-w-md mx-auto">
+          The persistent Neo4j pipeline is connected (0 Incident Records). The CTU13 dataset pipeline currently has no Incident nodes stored in the database.
+        </p>
       </div>
     );
   }

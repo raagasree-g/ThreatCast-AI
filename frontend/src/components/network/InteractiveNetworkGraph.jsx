@@ -118,7 +118,7 @@ export default function InteractiveNetworkGraph({
           </span>
           <span className="flex items-center gap-1.5 text-[#7a644c] font-semibold">
             <span className="w-5 h-0.5 border-t-2 border-dashed border-[#d97706]" />
-            Predicted Synapse
+            Forecast Path
           </span>
         </div>
       </div>
@@ -365,7 +365,7 @@ export default function InteractiveNetworkGraph({
       <div className="absolute bottom-4 left-4 right-4 z-10 flex items-center justify-between text-xs text-[#544230] bg-white/95 backdrop-blur-md px-4 py-2.5 rounded-xl border border-[#ebdcc7] font-mono shadow-xs">
         <span className="flex items-center gap-2">
           <Activity className="w-3.5 h-3.5 text-[#b45309]" />
-          <span>Click any node to inspect telemetry, observed attacks & predicted next actions.</span>
+          <span>Click any node to inspect topology details & observed activity.</span>
         </span>
         <span className="text-[#b45309] font-bold tracking-wider">
           High-Risk Nodes: {graphData.high_risk_nodes_count || 0}
