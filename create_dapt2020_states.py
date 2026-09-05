@@ -376,6 +376,14 @@ def process_capture(file_path):
                 "RST Flag Count"
             ].sum(),
 
+            "SYN_Per_Flow": group[
+                "SYN Flag Count"
+            ].sum() / max(len(group), 1),
+
+            "RST_Per_Flow": group[
+                "RST Flag Count"
+            ].sum() / max(len(group), 1),
+
             "Stage": stage,
         }
 

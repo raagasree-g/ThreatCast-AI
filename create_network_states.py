@@ -82,112 +82,60 @@ df[NUMERIC_COLUMNS] = df[NUMERIC_COLUMNS].replace(
 )
 
 
-# ============================================================
-# CREATE 30-SECOND TIME WINDOWS
-# ============================================================
-
-df["TimeWindow"] = (
-    df["StartTime"]
-    .dt.floor(f"{WINDOW_SECONDS}s")
-)
-
-
-# ============================================================
-# IDENTIFY ATTACK FLOWS
-# ============================================================
-
-df["IsAttack"] = (
-    df["Label"]
-    .astype(str)
-    .str.contains(
-        "Botnet-V46",
-        case=False,
-        na=False
+def process_network_states(df, window_seconds=30, include_packet_flags=False):
+    df["TimeWindow"] = df["StartTime"].dt.floor(f"{window_seconds}s")
+    df["IsAttack"] = (
+        df["Label"]
+        .astype(str)
+        .str.contains("Botnet-V46", case=False, na=False)
+        .astype(int)
     )
-    .astype(int)
-)
-
-
-# ============================================================
-# AGGREGATE EACH 30-SECOND WINDOW
-# ============================================================
-
-print("\nCreating 30-second network states...")
-
-grouped = df.groupby(
-    "TimeWindow",
-    sort=True
-)
-
-
-states = []
-
-for timestamp, group in grouped:
-
-    flow_count = len(group)
-
-    total_packets = group["TotPkts"].sum()
-
-    total_bytes = group["TotBytes"].sum()
-
-    total_source_bytes = group["SrcBytes"].sum()
-
-    avg_duration = group["Dur"].mean()
-
-    avg_packets_per_flow = (
-        total_packets / flow_count
-        if flow_count > 0
-        else 0
-    )
-
-    avg_bytes_per_flow = (
-        total_bytes / flow_count
-        if flow_count > 0
-        else 0
-    )
-
-    attack_flow_count = int(
-        group["IsAttack"].sum()
-    )
-
-    attack_ratio = (
-        attack_flow_count / flow_count
-        if flow_count > 0
-        else 0
-    )
-
-    states.append(
-        {
+    
+    grouped = df.groupby("TimeWindow", sort=True)
+    states = []
+    
+    for timestamp, group in grouped:
+        flow_count = len(group)
+        total_packets = group["TotPkts"].sum()
+        total_bytes = group["TotBytes"].sum()
+        total_source_bytes = group["SrcBytes"].sum()
+        avg_duration = group["Dur"].mean()
+        avg_packets_per_flow = total_packets / flow_count if flow_count > 0 else 0
+        avg_bytes_per_flow = total_bytes / flow_count if flow_count > 0 else 0
+        attack_flow_count = int(group["IsAttack"].sum())
+        attack_ratio = attack_flow_count / flow_count if flow_count > 0 else 0
+        
+        row_dict = {
             "TimeWindow": timestamp,
-
             "Flow_Count": flow_count,
-
             "Total_Packets": total_packets,
-
             "Total_Bytes": total_bytes,
-
             "Total_Source_Bytes": total_source_bytes,
-
             "Avg_Duration": avg_duration,
-
-            "Avg_Packets_Per_Flow":
-                avg_packets_per_flow,
-
-            "Avg_Bytes_Per_Flow":
-                avg_bytes_per_flow,
-
-            # These are TARGET-CONSTRUCTION variables.
-            # They must NOT be model input features.
-            "Attack_Flow_Count":
-                attack_flow_count,
-
-            "Attack_Ratio":
-                attack_ratio
+            "Avg_Packets_Per_Flow": avg_packets_per_flow,
+            "Avg_Bytes_Per_Flow": avg_bytes_per_flow,
+            "Attack_Flow_Count": attack_flow_count,
+            "Attack_Ratio": attack_ratio
         }
-    )
+        
+        if include_packet_flags and "State" in group.columns:
+            state_str = group["State"].astype(str).str.upper()
+            syn_count = state_str.str.contains("S", na=False).sum()
+            fin_count = state_str.str.contains("F", na=False).sum()
+            rst_count = state_str.str.contains("R", na=False).sum()
+            syn_no_ack = (state_str.str.contains("S", na=False) & ~state_str.str.contains("A", na=False)).sum()
+            
+            row_dict["syn_ratio"] = syn_count / max(flow_count, 1)
+            row_dict["fin_ratio"] = fin_count / max(flow_count, 1)
+            row_dict["rst_ratio"] = rst_count / max(flow_count, 1)
+            row_dict["syn_without_ack_count"] = int(syn_no_ack)
+            
+        states.append(row_dict)
+        
+    return pd.DataFrame(states)
 
 
-states = pd.DataFrame(states)
+states = process_network_states(df, WINDOW_SECONDS, include_packet_flags=False)
 
 
 # ============================================================
