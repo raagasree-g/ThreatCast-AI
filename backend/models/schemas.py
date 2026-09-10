@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 # -----------------------------------------------------------------------------
 # System & Health
 # -----------------------------------------------------------------------------
+
 class HealthResponse(BaseModel):
     status: str = "healthy"
     engine: str = "online"
@@ -17,6 +18,7 @@ class HealthResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Dashboard & KPIs
 # -----------------------------------------------------------------------------
+
 class TrendItem(BaseModel):
     direction: str = Field(
         ...,
@@ -75,6 +77,7 @@ class DashboardSummary(BaseModel):
 # -----------------------------------------------------------------------------
 # Security Events & Telemetry
 # -----------------------------------------------------------------------------
+
 class SecurityEvent(BaseModel):
     id: str
     timestamp: str
@@ -106,6 +109,7 @@ class EventsResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Network Topology & Risk Graph
 # -----------------------------------------------------------------------------
+
 class NetworkNode(BaseModel):
     id: str
     label: str
@@ -158,6 +162,7 @@ class NetworkGraphResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Network Telemetry Activity Charts
 # -----------------------------------------------------------------------------
+
 class TrafficPoint(BaseModel):
     time: str
     bytes_in_mbps: float
@@ -188,6 +193,7 @@ class NetworkActivityResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Attack Forecasting
 # -----------------------------------------------------------------------------
+
 class ForecastStage(BaseModel):
     stage_id: str
     horizon: str = Field(
@@ -227,6 +233,7 @@ class ForecastResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # LSTM Model Comparison
 # -----------------------------------------------------------------------------
+
 class LSTMModelSummary(BaseModel):
     name: str
     feature_type: str
@@ -259,6 +266,7 @@ class ModelComparisonResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Security Rules & Disagreements
 # -----------------------------------------------------------------------------
+
 class RuleItem(BaseModel):
     id: str
     name: str
@@ -304,6 +312,7 @@ class DisagreementResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Incidents Management
 # -----------------------------------------------------------------------------
+
 class IncidentTimelineItem(BaseModel):
     time: str
     title: str
@@ -351,40 +360,93 @@ class IncidentDetailResponse(BaseModel):
 # -----------------------------------------------------------------------------
 # Explainability
 # -----------------------------------------------------------------------------
-class SignalContribution(BaseModel):
-    signal_name: str
-    category: str
-    weight: float = Field(
-        ...,
-        ge=0.0,
-        le=1.0,
-    )
-    direction: str = Field(
-        ...,
-        description="'supports_prediction', 'neutral', 'mitigating'",
-    )
-    source_evidence: str
-    metric_value: str
+
+class ShapFeatureImportance(BaseModel):
+    feature: str
+    importance: float
+
+
+class ShapLocalContribution(BaseModel):
+    scenario: str
+    timestamp: str
+    probability: float
+    actual_target: Optional[int] = None
+    feature: str
+    shap_value: float
+    direction: str
+
+
+class ShapTimestepContribution(BaseModel):
+    scenario: str
+    timestamp: str
+    timestep: int
+    feature: str
+    shap_value: float
+
+
+class TemporalAttribution(BaseModel):
+    timestep: int
+    label: str
+    relative_weight: float
+    percentage: float
 
 
 class ExplainabilityResponse(BaseModel):
     incident_id: str
+
+    model: str
+    explanation_method: str
+
+    probability: float
+    threshold: float
+    warning: bool
+    label: str
+
+    scenario: str
+    timestamp: str
+
+    sequence_length: int
+    state_duration_seconds: int
+    feature_count: int
+
     predicted_stage: str
     confidence: float
     observed_stage: str
+
     forecast_reasoning: str
+
     graph_proximity_score: float
     temporal_sequence_alignment: float
     fastrp_embedding_note: str
-    contributing_signals: List[SignalContribution]
+
+    global_feature_importance: List[
+        ShapFeatureImportance
+    ]
+
+    contributing_signals: List[
+        ShapLocalContribution
+    ]
+
+    timestep_feature_shap: List[
+        ShapTimestepContribution
+    ]
+
+    temporal_attribution: List[
+        TemporalAttribution
+    ]
+
     subgraph_nodes: List[str]
     subgraph_edges: List[str]
+
+    scope_note: str
+
     last_updated: str
 
 
 # -----------------------------------------------------------------------------
 # Demo Attack Simulator
 # -----------------------------------------------------------------------------
+
 class SimulateAttackRequest(BaseModel):
     scenario: str = Field(
         "lateral_movement_wave",

@@ -1,195 +1,354 @@
 from pathlib import Path
-import argparse
+from collections import defaultdict
 import math
+import numpy as np
 import pandas as pd
-from scapy.all import PcapReader, IP, TCP, UDP
 
+try:
+    from scapy.all import PcapReader, IP, TCP, UDP
+except ImportError:
+    raise SystemExit(
+        "Scapy is not installed. Run: pip install scapy"
+    )
 
-MAX_PACKETS = 50000
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+PCAP_PATH = (
+    PROJECT_ROOT
+    / "data"
+    / "DAPT2020"
+    / "archive"
+    / "pcap-data"
+    / "enp0s3-monday.pcap"
+)
+
+OUTPUT_DIR = PROJECT_ROOT / "packet_features"
+OUTPUT_PATH = OUTPUT_DIR / "packet_features_30s.csv"
+
+WINDOW_SECONDS = 30
 
 
 def safe_mean(values):
-    return sum(values) / len(values) if values else 0.0
+    return float(np.mean(values)) if values else 0.0
 
 
-def safe_std(values):
-    if len(values) < 2:
-        return 0.0
-    mean = safe_mean(values)
-    return math.sqrt(sum((x - mean) ** 2 for x in values) / len(values))
+def safe_variance(values):
+    return float(np.var(values)) if values else 0.0
 
 
 def entropy(values):
     if not values:
         return 0.0
 
-    counts = {}
-    for value in values:
-        counts[value] = counts.get(value, 0) + 1
+    counts = pd.Series(values).value_counts().values.astype(float)
+    probabilities = counts / counts.sum()
 
-    total = len(values)
-    result = 0.0
-
-    for count in counts.values():
-        p = count / total
-        result -= p * math.log2(p)
-
-    return result
+    return float(
+        -np.sum(
+            probabilities * np.log2(probabilities + 1e-12)
+        )
+    )
 
 
-def extract_features(pcap_path):
-    timestamps = []
-    ttls = []
-    tcp_windows = []
-    packet_lengths = []
-    src_ports = []
-    dst_ports = []
+def packet_features(window_packets):
+    packet_sizes = []
+    ttl_values = []
+    tcp_window_values = []
 
     tcp_syn = 0
-    tcp_syn_ack = 0
+    tcp_ack = 0
     tcp_rst = 0
     tcp_fin = 0
-    tcp_retransmissions = 0
-    fragments = 0
+    tcp_psh = 0
 
-    seen_tcp = set()
+    fragmented_packets = 0
 
-    reader = PcapReader(str(pcap_path))
+    source_ips = set()
+    destination_ips = set()
+    destination_ports = set()
 
-    try:
-        for packet_number, packet in enumerate(reader, start=1):
+    source_port_activity = defaultdict(set)
 
-            if packet_number % 10000 == 0:
-                print(f"Processed packets: {packet_number:,}")
+    first_timestamp = None
+    last_timestamp = None
 
-            if packet_number > MAX_PACKETS:
-                break
+    for packet in window_packets:
 
-            if not packet.haslayer(IP):
-                continue
+        try:
+            timestamp = float(packet.time)
 
-            timestamps.append(float(packet.time))
-            packet_lengths.append(len(packet))
+            if first_timestamp is None:
+                first_timestamp = timestamp
 
-            ip = packet[IP]
+            last_timestamp = timestamp
 
-            ttls.append(int(ip.ttl))
+            packet_sizes.append(len(packet))
 
-            if getattr(ip, "frag", 0) > 0 or getattr(ip, "flags", 0).MF:
-                fragments += 1
+            if IP in packet:
+                ip = packet[IP]
 
-            if packet.haslayer(TCP):
+                ttl_values.append(int(ip.ttl))
+
+                source_ips.add(ip.src)
+                destination_ips.add(ip.dst)
+
+                if getattr(ip, "flags", 0) & 1:
+                    fragmented_packets += 1
+
+            if TCP in packet:
+
                 tcp = packet[TCP]
 
-                src_ports.append(int(tcp.sport))
-                dst_ports.append(int(tcp.dport))
-                tcp_windows.append(int(tcp.window))
-
-                flags = str(tcp.flags)
-
-                if "S" in flags and "A" not in flags:
-                    tcp_syn += 1
-
-                if "S" in flags and "A" in flags:
-                    tcp_syn_ack += 1
-
-                if "R" in flags:
-                    tcp_rst += 1
-
-                if "F" in flags:
-                    tcp_fin += 1
-
-                key = (
-                    ip.src,
-                    ip.dst,
-                    int(tcp.sport),
-                    int(tcp.dport),
-                    int(tcp.seq),
+                tcp_window_values.append(
+                    int(tcp.window)
                 )
 
-                if key in seen_tcp:
-                    tcp_retransmissions += 1
-                else:
-                    seen_tcp.add(key)
+                flags = int(tcp.flags)
 
-            elif packet.haslayer(UDP):
+                if flags & 0x02:
+                    tcp_syn += 1
+
+                if flags & 0x10:
+                    tcp_ack += 1
+
+                if flags & 0x04:
+                    tcp_rst += 1
+
+                if flags & 0x01:
+                    tcp_fin += 1
+
+                if flags & 0x08:
+                    tcp_psh += 1
+
+                destination_ports.add(
+                    int(tcp.dport)
+                )
+
+                source_port_activity[
+                    packet[IP].src
+                ].add(int(tcp.dport))
+
+            elif UDP in packet:
+
                 udp = packet[UDP]
-                src_ports.append(int(udp.sport))
-                dst_ports.append(int(udp.dport))
 
-    finally:
-        reader.close()
+                destination_ports.add(
+                    int(udp.dport)
+                )
 
-    if not timestamps:
-        raise ValueError("No IPv4 packets found in the sampled PCAP.")
+                if IP in packet:
+                    source_port_activity[
+                        packet[IP].src
+                    ].add(int(udp.dport))
 
-    duration = max(timestamps) - min(timestamps) if len(timestamps) > 1 else 0.0
+        except Exception:
+            continue
+
+    unique_ports_per_source = [
+        len(ports)
+        for ports in source_port_activity.values()
+    ]
+
+    scan_entropy = entropy(
+        list(destination_ports)
+    )
+
+    duration = 0.0
+
+    if (
+        first_timestamp is not None
+        and last_timestamp is not None
+    ):
+        duration = max(
+            0.0,
+            last_timestamp - first_timestamp
+        )
 
     return {
-        "Packet_Count": len(timestamps),
-        "Packet_Rate": len(timestamps) / duration if duration > 0 else 0.0,
-        "Total_Packet_Bytes": sum(packet_lengths),
-        "Avg_Packet_Length": safe_mean(packet_lengths),
-        "Packet_Length_Std": safe_std(packet_lengths),
-        "TTL_Mean": safe_mean(ttls),
-        "TTL_Variance": safe_std(ttls) ** 2,
-        "TCP_Window_Mean": safe_mean(tcp_windows),
-        "TCP_Window_Std": safe_std(tcp_windows),
-        "TCP_SYN": tcp_syn,
-        "TCP_SYN_ACK": tcp_syn_ack,
-        "TCP_RST": tcp_rst,
-        "TCP_FIN": tcp_fin,
-        "TCP_Retransmissions": tcp_retransmissions,
-        "IP_Fragment_Count": fragments,
-        "Unique_Source_Ports": len(set(src_ports)),
-        "Unique_Destination_Ports": len(set(dst_ports)),
-        "Destination_Port_Entropy": entropy(dst_ports),
-        "TCP_SYN_Rate": tcp_syn / duration if duration > 0 else 0.0,
-        "TCP_RST_Rate": tcp_rst / duration if duration > 0 else 0.0,
-        "Capture_Duration": duration,
+        "Packet_Count": len(window_packets),
+
+        "Avg_Packet_Size": safe_mean(
+            packet_sizes
+        ),
+
+        "Packet_Size_Variance": safe_variance(
+            packet_sizes
+        ),
+
+        "TTL_Mean": safe_mean(
+            ttl_values
+        ),
+
+        "TTL_Variance": safe_variance(
+            ttl_values
+        ),
+
+        "TCP_Window_Mean": safe_mean(
+            tcp_window_values
+        ),
+
+        "TCP_Window_Variance": safe_variance(
+            tcp_window_values
+        ),
+
+        "TCP_SYN_Count": tcp_syn,
+        "TCP_ACK_Count": tcp_ack,
+        "TCP_RST_Count": tcp_rst,
+        "TCP_FIN_Count": tcp_fin,
+        "TCP_PSH_Count": tcp_psh,
+
+        "Fragmented_Packet_Count": fragmented_packets,
+
+        "Unique_Source_IPs": len(source_ips),
+        "Unique_Destination_IPs": len(
+            destination_ips
+        ),
+
+        "Unique_Destination_Ports": len(
+            destination_ports
+        ),
+
+        "Max_Unique_Ports_Per_Source": (
+            max(unique_ports_per_source)
+            if unique_ports_per_source
+            else 0
+        ),
+
+        "Port_Scan_Signature": int(
+            any(
+                count >= 10
+                for count in unique_ports_per_source
+            )
+        ),
+
+        "Scan_Entropy": scan_entropy,
+
+        "Window_Duration": duration,
     }
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def extract():
 
-    parser.add_argument("--pcap", required=True)
-    parser.add_argument("--output", default="packet_features.csv")
+    if not PCAP_PATH.exists():
+        raise FileNotFoundError(
+            f"PCAP not found:\n{PCAP_PATH}"
+        )
 
-    args = parser.parse_args()
+    OUTPUT_DIR.mkdir(
+        parents=True,
+        exist_ok=True
+    )
 
-    pcap_path = Path(args.pcap)
-    output_path = Path(args.output)
-
-    if not pcap_path.exists():
-        raise FileNotFoundError(f"PCAP not found: {pcap_path}")
-
-    print("=" * 70)
-    print("THREATCAST - PACKET-LEVEL PCAP FEATURE EXTRACTION")
-    print("=" * 70)
-    print(f"PCAP: {pcap_path}")
-    print(f"Sample limit: {MAX_PACKETS:,} packets")
+    print("=" * 78)
+    print("THREATCAST - PACKET LEVEL PCAP FEATURE EXTRACTION")
+    print("=" * 78)
+    print(f"PCAP: {PCAP_PATH}")
+    print(f"Window size: {WINDOW_SECONDS} seconds")
     print()
 
-    features = extract_features(pcap_path)
+    windows = defaultdict(list)
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
+    packet_count = 0
+    first_timestamp = None
+    last_timestamp = None
 
-    pd.DataFrame([features]).to_csv(output_path, index=False)
+    print("Reading PCAP...")
+
+    with PcapReader(str(PCAP_PATH)) as reader:
+
+        for packet in reader:
+
+            packet_count += 1
+
+            try:
+                timestamp = float(packet.time)
+            except Exception:
+                continue
+
+            if first_timestamp is None:
+                first_timestamp = timestamp
+
+            last_timestamp = timestamp
+
+            window_id = int(
+                (timestamp - first_timestamp)
+                // WINDOW_SECONDS
+            )
+
+            windows[window_id].append(
+                packet
+            )
+
+            if packet_count % 100000 == 0:
+                print(
+                    f"Packets processed: "
+                    f"{packet_count:,}"
+                )
 
     print()
-    print("=" * 70)
-    print("EXTRACTED PACKET FEATURES")
-    print("=" * 70)
+    print(
+        f"Total packets processed: "
+        f"{packet_count:,}"
+    )
 
-    for name, value in features.items():
-        print(f"{name:30} {value}")
+    print(
+        f"30-second windows: "
+        f"{len(windows):,}"
+    )
+
+    rows = []
+
+    for window_id in sorted(windows):
+
+        packets = windows[window_id]
+
+        features = packet_features(
+            packets
+        )
+
+        start_time = (
+            first_timestamp
+            + window_id * WINDOW_SECONDS
+        )
+
+        row = {
+            "Window_ID": window_id,
+            "Timestamp": pd.to_datetime(
+                start_time,
+                unit="s"
+            ),
+        }
+
+        row.update(features)
+
+        rows.append(row)
+
+    df = pd.DataFrame(rows)
+
+    if df.empty:
+        raise RuntimeError(
+            "No packet-level windows were generated."
+        )
+
+    df.to_csv(
+        OUTPUT_PATH,
+        index=False
+    )
 
     print()
-    print(f"Saved: {output_path}")
+    print("=" * 78)
+    print("EXTRACTION COMPLETE")
+    print("=" * 78)
+    print(f"Rows: {len(df):,}")
+    print(f"Features: {len(df.columns):,}")
     print()
-    print("PACKET-LEVEL EXTRACTION COMPLETE")
+    print("Output:")
+    print(OUTPUT_PATH)
+    print()
+    print("Columns:")
+    for column in df.columns:
+        print(f"  - {column}")
 
 
 if __name__ == "__main__":
-    main()
+    extract()

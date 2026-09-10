@@ -33,3 +33,6 @@ data/DAPT2020/archive/
 .DS_Store
 *.tmp
 thresholddata/CTU13/scenario2/capture20110811.biargus.long.labeled
+
+# Large raw CTU13 dataset files
+data/CTU13/scenario2/

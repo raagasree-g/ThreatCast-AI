@@ -55,9 +55,6 @@ export const getHealth = () =>
 // -----------------------------------------------------------------------------
 // DASHBOARD
 // -----------------------------------------------------------------------------
-// These use the REAL FastAPI backend.
-// No fallback is used here.
-// -----------------------------------------------------------------------------
 
 export const getDashboardSummary = async () => {
   const res = await apiClient.get('/api/dashboard/summary');
@@ -172,6 +169,24 @@ export const resetSimulation = () =>
   );
 
 // -----------------------------------------------------------------------------
+// CTU13 RESEARCH DEMO
+// -----------------------------------------------------------------------------
+// Uses the REAL CTU13 network-state CSV and the trained CTU13 LSTM.
+// No fallback is used because this page is specifically for research/demo
+// evidence and should not silently display fabricated fallback data.
+// -----------------------------------------------------------------------------
+
+export const getCTU13Demo = (scenario = 12, states = 20) =>
+  apiClient
+    .get('/api/demo/ctu13', {
+      params: {
+        scenario,
+        states,
+      },
+    })
+    .then((res) => res.data);
+
+// -----------------------------------------------------------------------------
 // DEFAULT EXPORT
 // -----------------------------------------------------------------------------
 
@@ -191,4 +206,5 @@ export default {
   getExplainability,
   simulateAttack,
   resetSimulation,
+  getCTU13Demo,
 };
