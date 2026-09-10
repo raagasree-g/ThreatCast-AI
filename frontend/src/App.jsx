@@ -8,6 +8,7 @@ import NetworkGraph from './pages/NetworkGraph';
 import Disagreements from './pages/Disagreements';
 import Incidents from './pages/Incidents';
 import Explainability from './pages/Explainability';
+import ResearchDemo from './pages/ResearchDemo';
 import Login from './pages/Login';
 import { getDashboardSummary } from './services/api';
 
@@ -60,6 +61,7 @@ export default function App() {
           <Route path="disagreements" element={<Disagreements />} />
           <Route path="incidents" element={<Incidents />} />
           <Route path="explainability" element={<Explainability />} />
+          <Route path="research-demo" element={<ResearchDemo />} />
         </Route>
 
         {/* Fallback */}

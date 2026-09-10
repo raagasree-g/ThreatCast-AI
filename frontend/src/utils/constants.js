@@ -6,6 +6,7 @@ export const NAV_ITEMS = [
   { id: 'disagreements', label: 'Disagreements', path: '/disagreements', icon: 'GitCompare' },
   { id: 'incidents', label: 'Incidents', path: '/incidents', icon: 'ShieldAlert' },
   { id: 'explainability', label: 'Explainability', path: '/explainability', icon: 'Sparkles' },
+  { id: 'research-demo', label: 'Research Demo', path: '/research-demo', icon: 'Sparkles' },
 ];
 
 export const MITRE_TACTICS = [
