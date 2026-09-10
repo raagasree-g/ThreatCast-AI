@@ -1,6 +1,7 @@
 from pathlib import Path
-
+from backend.data.live_explainability import explain_sequence
 import pandas as pd
+from typing import List
 from fastapi import APIRouter, HTTPException
 
 from backend.models.schemas import SimulateAttackRequest, SimulationResponse
@@ -225,3 +226,12 @@ def get_ctu13_demo(
             "for research demonstration and are not model inputs."
         ),
     }
+@router.post("/live-explain")
+def live_explain(sequence: List[List[float]]):
+    try:
+        return explain_sequence(sequence)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        )

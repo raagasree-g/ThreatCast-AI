@@ -153,6 +153,19 @@ export const getExplainability = (incidentId = 'INC-8042') =>
   );
 
 // -----------------------------------------------------------------------------
+// LIVE PREDICTION-SPECIFIC EXPLAINABILITY
+// -----------------------------------------------------------------------------
+// Uses the exact 5 x 12 sequence supplied to the backend.
+// SHAP is computed live for that prediction.
+// No fallback is used because this endpoint is part of the research evidence.
+// -----------------------------------------------------------------------------
+
+export const getLiveExplainability = (sequence) =>
+  apiClient
+    .post('/api/demo/live-explain', sequence)
+    .then((res) => res.data);
+
+// -----------------------------------------------------------------------------
 // Demo Attack Simulation
 // -----------------------------------------------------------------------------
 
@@ -204,6 +217,7 @@ export default {
   getIncidents,
   getIncident,
   getExplainability,
+  getLiveExplainability,
   simulateAttack,
   resetSimulation,
   getCTU13Demo,

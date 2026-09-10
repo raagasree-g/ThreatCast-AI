@@ -1,69 +1,69 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Activity,
-  Brain,
-  Clock3,
-  Database,
-  Network,
-  ShieldAlert,
-  Sparkles,
-  Target,
-  TrendingUp,
-} from 'lucide-react';
+  getCTU13Demo,
+  getLiveExplainability,
+} from '../services/api';
 
-import { getCTU13Demo, getExplainability } from '../services/api';
+const FEATURE_NAMES = [
+  'Flow_Count',
+  'Total_Packets',
+  'Total_Bytes',
+  'Total_Source_Bytes',
+  'Avg_Duration',
+  'Avg_Packets_Per_Flow',
+  'Avg_Bytes_Per_Flow',
+  'Flow_Count_Change',
+  'Total_Packets_Change',
+  'Total_Bytes_Change',
+  'Total_Source_Bytes_Change',
+  'Avg_Duration_Change',
+];
 
-const THRESHOLD = 0.08;
+const formatNumber = (value, digits = 4) => {
+  const number = Number(value);
 
-function formatProbability(value) {
-  const probability = Number(value || 0);
-
-  if (probability < 0.001) {
-    return `${(probability * 100).toFixed(4)}%`;
+  if (!Number.isFinite(number)) {
+    return '—';
   }
 
-  return `${(probability * 100).toFixed(2)}%`;
-}
+  return number.toLocaleString(undefined, {
+    maximumFractionDigits: digits,
+  });
+};
 
-function formatTimestamp(value) {
-  if (!value) return '—';
+const formatProbability = (value) => {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return '—';
+  }
+
+  if (number < 0.01) {
+    return `${(number * 100).toFixed(4)}%`;
+  }
+
+  return `${(number * 100).toFixed(2)}%`;
+};
+
+const formatDate = (value) => {
+  if (!value) {
+    return '—';
+  }
 
   const date = new Date(value);
 
   if (Number.isNaN(date.getTime())) {
-    return String(value);
+    return value;
   }
 
   return date.toLocaleString();
-}
+};
 
-function Card({ children, className = '' }) {
-  return (
-    <div
-      className={`rounded-2xl border border-slate-800 bg-slate-950/70 shadow-lg ${className}`}
-    >
-      {children}
-    </div>
-  );
-}
+const getFeatureValue = (state, feature) => {
+  const value = Number(state?.[feature]);
 
-function SectionHeader({ icon: Icon, title, subtitle }) {
-  return (
-    <div className="mb-5 flex items-start gap-3">
-      <div className="rounded-xl border border-slate-700 bg-slate-900 p-2">
-        <Icon size={20} />
-      </div>
-
-      <div>
-        <h2 className="text-lg font-semibold text-white">{title}</h2>
-
-        {subtitle && (
-          <p className="mt-1 text-sm text-slate-400">{subtitle}</p>
-        )}
-      </div>
-    </div>
-  );
-}
+  return Number.isFinite(value) ? value : 0;
+};
 
 export default function ResearchDemo() {
   const [scenario, setScenario] = useState(12);
@@ -80,15 +80,67 @@ export default function ResearchDemo() {
     setError('');
 
     try {
-      const [demoData, explanationData] = await Promise.all([
-        getCTU13Demo(scenario, states),
-        getExplainability('INC-8042'),
-      ]);
+      /*
+       * Step 1:
+       * Load the real CTU13 research-demo timeline.
+       */
+      const demoData = await getCTU13Demo(scenario, states);
+
+      const timeline = demoData?.timeline || [];
+
+      if (timeline.length < 5) {
+        throw new Error(
+          'At least 5 CTU13 states are required for live SHAP explanation.'
+        );
+      }
+
+      /*
+       * Step 2:
+       * The production LSTM expects exactly:
+       *
+       *     5 timesteps × 12 features
+       *
+       * We therefore use the latest five states from the
+       * exact CTU13 timeline currently displayed.
+       */
+      const latestFiveStates = timeline.slice(-5);
+
+      const sequence = latestFiveStates.map((state) =>
+        FEATURE_NAMES.map((feature) => {
+          const value = Number(state?.[feature]);
+
+          if (!Number.isFinite(value)) {
+            throw new Error(
+              `Invalid value for ${feature} in CTU13 timeline.`
+            );
+          }
+
+          return value;
+        })
+      );
+
+      /*
+       * Step 3:
+       * Send the exact 5 × 12 sequence to the live SHAP endpoint.
+       *
+       * The backend runs:
+       *
+       *     production scaler
+       *             ↓
+       *     production CTU13 LSTM
+       *             ↓
+       *     live GradientExplainer
+       *
+       * No INC-8042 fallback or precomputed explanation is used here.
+       */
+      const explanationData =
+        await getLiveExplainability(sequence);
 
       setDemo(demoData);
       setExplainability(explanationData);
     } catch (err) {
       console.error(err);
+
       setError(
         err?.response?.data?.detail ||
           err?.message ||
@@ -108,604 +160,1018 @@ export default function ResearchDemo() {
   const flaggedStates = useMemo(
     () =>
       timeline.filter(
-        (item) =>
-          Boolean(item.warning) ||
-          Number(item.probability || 0) >= THRESHOLD
+        (state) =>
+          state?.warning === true ||
+          Number(state?.probability || 0) >= 0.08
       ),
     [timeline]
   );
 
-  const temporalAttribution =
-    explainability?.temporal_attribution || [];
+  const latest = demo?.latest || null;
 
-  const globalImportance =
-    explainability?.global_feature_importance || [];
+  const prediction = explainability?.prediction || {};
 
-  const localContributions =
-    explainability?.contributing_signals || [];
+  const featureContributions =
+    explainability?.feature_contributions || [];
 
-  const worldModel = {
-    snapshots: 930,
+  const temporalContributions =
+    explainability?.temporal_contributions || [];
+
+  const worldModel = demo?.world_model || {
+    graphSnapshots: 930,
     graphEncoder: 'GraphSAGE',
     temporalModel: 'Temporal Transformer',
-    rollout: 'Autoregressive latent rollout',
+    horizon: 'T+1 / T+2 / T+3',
     t1: '+22.70%',
     t2: '+23.20%',
     t3: '+18.31%',
   };
 
+  const positiveContributors = featureContributions.filter(
+    (item) => Number(item?.shap_value || 0) > 0
+  );
+
+  const negativeContributors = featureContributions.filter(
+    (item) => Number(item?.shap_value || 0) < 0
+  );
+
+  const maxAbsoluteShap = Math.max(
+    ...featureContributions.map(
+      (item) => Number(item?.absolute_shap || 0)
+    ),
+    0
+  );
+
   return (
-    <div className="min-h-screen bg-slate-950 px-6 py-8 text-slate-100">
-      <div className="mx-auto max-w-7xl">
-        {/* HEADER */}
-        <div className="mb-8">
-          <div className="mb-3 flex items-center gap-3">
-            <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3">
-              <Brain size={28} />
+    <div className="space-y-6">
+
+      {/* ------------------------------------------------------------------ */}
+      {/* HEADER */}
+      {/* ------------------------------------------------------------------ */}
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+
+          <div>
+            <div className="mb-2 inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-emerald-700">
+              Research Evidence
             </div>
 
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                ThreatCast
-              </p>
+            <h1 className="text-2xl font-bold text-slate-900">
+              ThreatCast Research Demo
+            </h1>
 
-              <h1 className="text-3xl font-bold text-white">
-                Research Demo
-              </h1>
-            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+              Real CTU13 network-state inference with prediction-specific
+              live SHAP explanations and a separate packet-level world-model
+              research pipeline.
+            </p>
           </div>
 
-          <p className="max-w-3xl text-sm leading-6 text-slate-400">
-            Research-facing view of the deployed CTU13 early-warning
-            model, explainability pipeline, packet-level intelligence,
-            and learned latent network dynamics.
-          </p>
+          <button
+            type="button"
+            onClick={loadDemo}
+            disabled={loading}
+            className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {loading ? 'Running...' : 'Refresh Demo'}
+          </button>
         </div>
+      </section>
 
-        {/* CONTROLS */}
-        <Card className="mb-6 p-5">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-slate-500">
-                CTU13 research controls
-              </p>
+      {/* ------------------------------------------------------------------ */}
+      {/* CONTROLS */}
+      {/* ------------------------------------------------------------------ */}
 
-              <div className="flex flex-wrap gap-3">
-                <label className="flex items-center gap-2 text-sm text-slate-300">
-                  Scenario
-                  <select
-                    value={scenario}
-                    onChange={(event) =>
-                      setScenario(Number(event.target.value))
-                    }
-                    className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white outline-none"
-                  >
-                    {Array.from({ length: 13 }, (_, index) => index + 1).map(
-                      (value) => (
-                        <option key={value} value={value}>
-                          Scenario {value}
-                        </option>
-                      )
-                    )}
-                  </select>
-                </label>
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="grid gap-4 md:grid-cols-2">
 
-                <label className="flex items-center gap-2 text-sm text-slate-300">
-                  States
-                  <select
-                    value={states}
-                    onChange={(event) =>
-                      setStates(Number(event.target.value))
-                    }
-                    className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-white outline-none"
-                  >
-                    {[10, 20, 30, 50].map((value) => (
-                      <option key={value} value={value}>
-                        {value}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </div>
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">
+              CTU13 Scenario
+            </label>
 
-            <button
-              onClick={loadDemo}
-              disabled={loading}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+            <select
+              value={scenario}
+              onChange={(event) =>
+                setScenario(Number(event.target.value))
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-slate-500"
             >
-              {loading ? 'Loading…' : 'Refresh research data'}
-            </button>
+              {Array.from({ length: 13 }, (_, index) => index + 1).map(
+                (value) => (
+                  <option key={value} value={value}>
+                    Scenario {value}
+                  </option>
+                )
+              )}
+            </select>
           </div>
-        </Card>
 
-        {error && (
-          <Card className="mb-6 border-red-900/70 p-5">
-            <div className="flex items-start gap-3">
-              <ShieldAlert className="mt-0.5 text-red-400" size={20} />
+          <div>
+            <label className="mb-2 block text-sm font-semibold text-slate-700">
+              States to Display
+            </label>
 
-              <div>
-                <p className="font-semibold text-red-300">
-                  Research Demo unavailable
-                </p>
+            <select
+              value={states}
+              onChange={(event) =>
+                setStates(Number(event.target.value))
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none focus:border-slate-500"
+            >
+              {[10, 20, 30, 50].map((value) => (
+                <option key={value} value={value}>
+                  {value} states
+                </option>
+              ))}
+            </select>
+          </div>
 
-                <p className="mt-1 text-sm text-red-400">
-                  {error}
-                </p>
-              </div>
+        </div>
+      </section>
+
+      {/* ------------------------------------------------------------------ */}
+      {/* ERROR */}
+      {/* ------------------------------------------------------------------ */}
+
+      {error && (
+        <section className="rounded-2xl border border-red-200 bg-red-50 p-5">
+          <div className="text-sm font-semibold text-red-800">
+            Research Demo Error
+          </div>
+
+          <div className="mt-1 text-sm text-red-700">
+            {error}
+          </div>
+
+          <button
+            type="button"
+            onClick={loadDemo}
+            className="mt-4 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-semibold text-red-700 hover:bg-red-100"
+          >
+            Retry
+          </button>
+        </section>
+      )}
+
+      {/* ------------------------------------------------------------------ */}
+      {/* LOADING */}
+      {/* ------------------------------------------------------------------ */}
+
+      {loading && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+          <div className="text-sm font-semibold text-slate-700">
+            Running CTU13 inference and live SHAP...
+          </div>
+
+          <div className="mt-2 text-xs text-slate-500">
+            Loading the selected scenario and computing a
+            prediction-specific explanation.
+          </div>
+        </section>
+      )}
+
+      {!loading && demo && (
+        <>
+          {/* -------------------------------------------------------------- */}
+          {/* MODEL STATUS */}
+          {/* -------------------------------------------------------------- */}
+
+          <section>
+            <div className="mb-3">
+              <h2 className="text-lg font-bold text-slate-900">
+                Live Model Status
+              </h2>
+
+              <p className="text-sm text-slate-500">
+                Production CTU13 early-warning pipeline
+              </p>
             </div>
-          </Card>
-        )}
 
-        {/* MODEL STATUS */}
-        <div className="mb-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              icon: Brain,
-              label: 'Model',
-              value: 'CTU13 LSTM',
-              detail: 'Early Warning',
-            },
-            {
-              icon: Clock3,
-              label: 'Temporal context',
-              value: '5 × 30 sec',
-              detail: '150 seconds',
-            },
-            {
-              icon: Database,
-              label: 'Input features',
-              value: '12',
-              detail: 'Network-state features',
-            },
-            {
-              icon: Target,
-              label: 'Warning threshold',
-              value: '8%',
-              detail: 'Configured decision boundary',
-            },
-          ].map((item) => {
-            const Icon = item.icon;
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 
-            return (
-              <Card key={item.label} className="p-5">
-                <div className="mb-4 flex items-center justify-between">
-                  <Icon size={20} />
-                  <span className="text-xs uppercase tracking-wider text-slate-500">
-                    {item.label}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Model
+                </div>
+
+                <div className="mt-2 text-lg font-bold text-slate-900">
+                  CTU13 LSTM
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  Real production artifact
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Input Window
+                </div>
+
+                <div className="mt-2 text-lg font-bold text-slate-900">
+                  5 × 30 sec
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  150 seconds temporal context
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Features
+                </div>
+
+                <div className="mt-2 text-lg font-bold text-slate-900">
+                  12
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  Production feature vector
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Warning Threshold
+                </div>
+
+                <div className="mt-2 text-lg font-bold text-slate-900">
+                  8%
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  Early-warning decision threshold
+                </div>
+              </div>
+
+            </div>
+          </section>
+
+          {/* -------------------------------------------------------------- */}
+          {/* PREDICTION */}
+          {/* -------------------------------------------------------------- */}
+
+          <section>
+            <div className="mb-3">
+              <h2 className="text-lg font-bold text-slate-900">
+                Current Prediction
+              </h2>
+
+              <p className="text-sm text-slate-500">
+                Generated from the selected CTU13 scenario
+              </p>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Warning Probability
+                </div>
+
+                <div className="mt-3 text-4xl font-bold text-slate-900">
+                  {formatProbability(
+                    prediction?.probability ?? latest?.probability
+                  )}
+                </div>
+
+                <div className="mt-2 text-xs text-slate-500">
+                  Threshold: 8%
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Classification
+                </div>
+
+                <div className="mt-3">
+                  <span
+                    className={`inline-flex rounded-full px-3 py-1.5 text-sm font-bold ${
+                      prediction?.warning
+                        ? 'bg-red-100 text-red-700'
+                        : 'bg-emerald-100 text-emerald-700'
+                    }`}
+                  >
+                    {prediction?.label ||
+                      (latest?.warning
+                        ? 'EARLY WARNING'
+                        : 'NORMAL')}
                   </span>
                 </div>
 
-                <p className="text-2xl font-bold text-white">
-                  {item.value}
-                </p>
+                <div className="mt-3 text-xs text-slate-500">
+                  Model: CTU13 LSTM
+                </div>
+              </div>
 
-                <p className="mt-1 text-sm text-slate-400">
-                  {item.detail}
-                </p>
-              </Card>
-            );
-          })}
-        </div>
-
-        {/* PREDICTION */}
-        <div className="mb-6 grid gap-6 lg:grid-cols-3">
-          <Card className="p-6 lg:col-span-1">
-            <SectionHeader
-              icon={Activity}
-              title="Current prediction"
-              subtitle="Latest state from the selected CTU13 sequence"
-            />
-
-            {loading && !demo ? (
-              <p className="text-sm text-slate-500">Loading…</p>
-            ) : demo?.latest ? (
-              <>
-                <p className="text-4xl font-bold text-white">
-                  {formatProbability(demo.latest.probability)}
-                </p>
-
-                <div className="mt-4 inline-flex rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs font-semibold">
-                  {demo.latest.label}
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Latest State
                 </div>
 
-                <div className="mt-5 space-y-2 text-sm text-slate-400">
-                  <div className="flex justify-between gap-4">
-                    <span>Scenario</span>
-                    <span className="text-slate-200">
-                      {demo.scenario ?? scenario}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between gap-4">
-                    <span>Timestamp</span>
-                    <span className="text-right text-slate-200">
-                      {formatTimestamp(demo.latest.timestamp)}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between gap-4">
-                    <span>Attack target</span>
-                    <span className="text-slate-200">
-                      {demo.latest.actual_target ?? '—'}
-                    </span>
-                  </div>
-
-                  <div className="flex justify-between gap-4">
-                    <span>Attack flow count</span>
-                    <span className="text-slate-200">
-                      {demo.latest.attack_flow_count ?? '—'}
-                    </span>
-                  </div>
+                <div className="mt-3 text-sm font-bold text-slate-900">
+                  Scenario {scenario}
                 </div>
-              </>
-            ) : (
-              <p className="text-sm text-slate-500">
-                No prediction available.
-              </p>
-            )}
-          </Card>
 
-          <Card className="p-6 lg:col-span-2">
-            <SectionHeader
-              icon={TrendingUp}
-              title="Prediction timeline"
-              subtitle="Real CTU13 network-state sequence with LSTM probability"
-            />
+                <div className="mt-1 text-xs text-slate-500">
+                  {formatDate(
+                    prediction?.timestamp ||
+                      latest?.timestamp
+                  )}
+                </div>
+              </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="border-b border-slate-800 text-xs uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="px-3 py-3">State</th>
-                    <th className="px-3 py-3">Timestamp</th>
-                    <th className="px-3 py-3">Probability</th>
-                    <th className="px-3 py-3">Target</th>
-                    <th className="px-3 py-3">Status</th>
-                  </tr>
-                </thead>
+            </div>
+          </section>
 
-                <tbody>
-                  {timeline.map((item, index) => {
-                    const probability =
-                      Number(item.probability || 0);
+          {/* -------------------------------------------------------------- */}
+          {/* TIMELINE */}
+          {/* -------------------------------------------------------------- */}
 
-                    const warning =
-                      Boolean(item.warning) ||
-                      probability >= THRESHOLD;
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
 
-                    return (
-                      <tr
-                        key={`${item.timestamp}-${index}`}
-                        className="border-b border-slate-900"
-                      >
-                        <td className="px-3 py-3 text-slate-300">
-                          {index + 1}
-                        </td>
+            <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  CTU13 Prediction Timeline
+                </h2>
 
-                        <td className="px-3 py-3 text-slate-400">
-                          {formatTimestamp(item.timestamp)}
-                        </td>
+                <p className="text-sm text-slate-500">
+                  Chronological early-warning probability across the selected
+                  network states
+                </p>
+              </div>
 
-                        <td className="px-3 py-3 font-semibold text-white">
-                          {formatProbability(probability)}
-                        </td>
-
-                        <td className="px-3 py-3 text-slate-400">
-                          {item.actual_target ?? '—'}
-                        </td>
-
-                        <td className="px-3 py-3">
-                          <span
-                            className={`rounded-full px-2 py-1 text-xs font-semibold ${
-                              warning
-                                ? 'border border-red-900 bg-red-950 text-red-300'
-                                : 'border border-slate-700 bg-slate-900 text-slate-400'
-                            }`}
-                          >
-                            {warning ? 'EARLY WARNING' : 'NORMAL'}
-                          </span>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="text-xs font-semibold text-slate-500">
+                {flaggedStates.length} flagged state
+                {flaggedStates.length === 1 ? '' : 's'}
+              </div>
             </div>
 
-            <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
-              <span>
-                Threshold: <b className="text-slate-300">8%</b>
-              </span>
+            <div className="mt-6 overflow-x-auto">
+              <div className="min-w-[720px] space-y-2">
 
-              <span>
-                States shown: <b className="text-slate-300">{timeline.length}</b>
-              </span>
+                <div className="grid grid-cols-[1fr_130px_130px_120px] gap-3 border-b border-slate-200 px-3 pb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  <div>Timestamp</div>
+                  <div>Probability</div>
+                  <div>Target</div>
+                  <div>Status</div>
+                </div>
 
-              <span>
-                Flagged states:{' '}
-                <b className="text-slate-300">
-                  {flaggedStates.length}
-                </b>
-              </span>
-            </div>
-          </Card>
-        </div>
+                {timeline.map((state, index) => {
+                  const probability = Number(
+                    state?.probability || 0
+                  );
 
-        {/* SHAP */}
-        <div className="mb-6 grid gap-6 lg:grid-cols-2">
-          <Card className="p-6">
-            <SectionHeader
-              icon={Sparkles}
-              title="Model reasoning — global SHAP"
-              subtitle="Relative global importance of the 12 deployed input features"
-            />
+                  const warning =
+                    state?.warning === true ||
+                    probability >= 0.08;
 
-            <div className="space-y-3">
-              {globalImportance.slice(0, 8).map((item, index) => {
-                const maximum = Math.max(
-                  ...globalImportance.map((entry) =>
-                    Math.abs(Number(entry.importance || 0))
-                  ),
-                  1
-                );
-
-                const width =
-                  (Math.abs(Number(item.importance || 0)) /
-                    maximum) *
-                  100;
-
-                return (
-                  <div key={`${item.feature}-${index}`}>
-                    <div className="mb-1 flex justify-between gap-4 text-xs">
-                      <span className="truncate text-slate-300">
-                        {item.feature}
-                      </span>
-
-                      <span className="text-slate-500">
-                        {Number(item.importance || 0).toFixed(5)}
-                      </span>
-                    </div>
-
-                    <div className="h-2 overflow-hidden rounded-full bg-slate-800">
-                      <div
-                        className="h-full rounded-full bg-slate-300"
-                        style={{ width: `${width}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <SectionHeader
-              icon={Target}
-              title="Model reasoning — local signals"
-              subtitle="Observed SHAP contributions from warning-related examples"
-            />
-
-            <div className="space-y-2">
-              {localContributions.slice(0, 8).map((item, index) => (
-                <div
-                  key={`${item.timestamp}-${item.feature}-${index}`}
-                  className="rounded-xl border border-slate-800 bg-slate-900/60 p-3"
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="font-medium text-slate-200">
-                      {item.feature}
-                    </span>
-
-                    <span
-                      className={`text-xs font-semibold ${
-                        item.direction === 'toward_warning'
-                          ? 'text-red-300'
-                          : 'text-slate-500'
+                  return (
+                    <div
+                      key={`${state?.timestamp || index}-${index}`}
+                      className={`grid grid-cols-[1fr_130px_130px_120px] gap-3 rounded-xl px-3 py-3 text-sm ${
+                        warning
+                          ? 'bg-red-50'
+                          : 'bg-slate-50'
                       }`}
                     >
-                      {item.direction}
-                    </span>
+                      <div className="text-slate-700">
+                        {formatDate(state?.timestamp)}
+                      </div>
+
+                      <div className="font-semibold text-slate-900">
+                        {formatProbability(probability)}
+                      </div>
+
+                      <div className="text-slate-600">
+                        {state?.actual_target === 1
+                          ? 'Early warning target'
+                          : 'Normal'}
+                      </div>
+
+                      <div>
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-xs font-bold ${
+                            warning
+                              ? 'bg-red-100 text-red-700'
+                              : 'bg-emerald-100 text-emerald-700'
+                          }`}
+                        >
+                          {warning ? 'WARNING' : 'NORMAL'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+
+              </div>
+            </div>
+          </section>
+
+          {/* -------------------------------------------------------------- */}
+          {/* LIVE SHAP */}
+          {/* -------------------------------------------------------------- */}
+
+          <section>
+            <div className="mb-3">
+              <h2 className="text-lg font-bold text-slate-900">
+                Live Prediction-Specific Explainability
+              </h2>
+
+              <p className="text-sm text-slate-500">
+                SHAP contributions computed from the exact 5-state sequence
+                used for the current prediction
+              </p>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+
+              {/* FEATURE CONTRIBUTIONS */}
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h3 className="font-bold text-slate-900">
+                      Feature Contributions
+                    </h3>
+
+                    <p className="mt-1 text-xs text-slate-500">
+                      Aggregated SHAP contribution across the five-state
+                      sequence
+                    </p>
                   </div>
 
-                  <div className="mt-1 flex justify-between text-xs text-slate-500">
-                    <span>
-                      SHAP {Number(item.shap_value || 0).toFixed(5)}
-                    </span>
+                  <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">
+                    LIVE SHAP
+                  </span>
+                </div>
 
-                    <span>
-                      P={formatProbability(item.probability)}
-                    </span>
+                <div className="mt-5 space-y-3">
+
+                  {featureContributions.length === 0 && (
+                    <div className="rounded-xl bg-slate-50 p-4 text-sm text-slate-500">
+                      No feature explanation available.
+                    </div>
+                  )}
+
+                  {featureContributions
+                    .slice(0, 8)
+                    .map((item) => {
+                      const absoluteShap = Number(
+                        item?.absolute_shap || 0
+                      );
+
+                      const width =
+                        maxAbsoluteShap > 0
+                          ? Math.max(
+                              4,
+                              (absoluteShap /
+                                maxAbsoluteShap) *
+                                100
+                            )
+                          : 4;
+
+                      const positive =
+                        Number(item?.shap_value || 0) > 0;
+
+                      return (
+                        <div key={item.feature}>
+
+                          <div className="mb-1 flex items-center justify-between gap-3">
+                            <div className="text-xs font-semibold text-slate-700">
+                              {item.feature}
+                            </div>
+
+                            <div
+                              className={`text-xs font-bold ${
+                                positive
+                                  ? 'text-red-600'
+                                  : 'text-emerald-600'
+                              }`}
+                            >
+                              {Number(
+                                item?.shap_value || 0
+                              ) > 0
+                                ? '+'
+                                : ''}
+                              {formatNumber(
+                                item?.shap_value,
+                                6
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                            <div
+                              className={`h-full rounded-full ${
+                                positive
+                                  ? 'bg-red-400'
+                                  : 'bg-emerald-400'
+                              }`}
+                              style={{
+                                width: `${width}%`,
+                              }}
+                            />
+                          </div>
+
+                          <div className="mt-1 flex justify-between text-[11px] text-slate-400">
+                            <span>
+                              {positive
+                                ? 'Increases warning probability'
+                                : 'Decreases warning probability'}
+                            </span>
+
+                            <span>
+                              Current:{' '}
+                              {formatNumber(
+                                item?.current_value
+                              )}
+                            </span>
+                          </div>
+
+                        </div>
+                      );
+                    })}
+
+                </div>
+
+              </div>
+
+              {/* POSITIVE / NEGATIVE */}
+
+              <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+
+                <div>
+                  <h3 className="font-bold text-slate-900">
+                    Direction of Evidence
+                  </h3>
+
+                  <p className="mt-1 text-xs text-slate-500">
+                    Which features push the model toward or away from an
+                    early warning
+                  </p>
+                </div>
+
+                <div className="mt-5 grid gap-5 md:grid-cols-2">
+
+                  <div>
+                    <div className="mb-3 text-xs font-bold uppercase tracking-wide text-red-600">
+                      Increases Warning
+                    </div>
+
+                    <div className="space-y-2">
+                      {positiveContributors.length === 0 && (
+                        <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
+                          No positive contributors.
+                        </div>
+                      )}
+
+                      {positiveContributors
+                        .slice(0, 6)
+                        .map((item) => (
+                          <div
+                            key={item.feature}
+                            className="rounded-xl bg-red-50 p-3"
+                          >
+                            <div className="text-xs font-semibold text-slate-800">
+                              {item.feature}
+                            </div>
+
+                            <div className="mt-1 text-xs font-bold text-red-600">
+                              +{formatNumber(
+                                item.shap_value,
+                                6
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="mb-3 text-xs font-bold uppercase tracking-wide text-emerald-600">
+                      Decreases Warning
+                    </div>
+
+                    <div className="space-y-2">
+                      {negativeContributors.length === 0 && (
+                        <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-500">
+                          No negative contributors.
+                        </div>
+                      )}
+
+                      {negativeContributors
+                        .slice(0, 6)
+                        .map((item) => (
+                          <div
+                            key={item.feature}
+                            className="rounded-xl bg-emerald-50 p-3"
+                          >
+                            <div className="text-xs font-semibold text-slate-800">
+                              {item.feature}
+                            </div>
+
+                            <div className="mt-1 text-xs font-bold text-emerald-600">
+                              {formatNumber(
+                                item.shap_value,
+                                6
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                </div>
+
+              </div>
+
+            </div>
+
+            <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-blue-800">
+              <strong>Explanation method:</strong>{' '}
+              {explainability?.explanation_method ||
+                'LIVE SHAP GradientExplainer'}
+              . SHAP values are computed live from the exact 5 × 12 input
+              sequence supplied to the production CTU13 LSTM.
+            </div>
+          </section>
+
+          {/* -------------------------------------------------------------- */}
+          {/* TEMPORAL SHAP */}
+          {/* -------------------------------------------------------------- */}
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                Temporal Reasoning
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                Post-hoc temporal attribution across the five-state LSTM
+                sequence
+              </p>
+            </div>
+
+            <div className="mt-6 grid gap-3 md:grid-cols-5">
+
+              {temporalContributions.map((item) => (
+                <div
+                  key={item.timestep}
+                  className="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+                >
+                  <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    {item.label}
+                  </div>
+
+                  <div className="mt-3 text-2xl font-bold text-slate-900">
+                    {Number(item?.percentage || 0).toFixed(2)}%
+                  </div>
+
+                  <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full rounded-full bg-slate-700"
+                      style={{
+                        width: `${Math.min(
+                          100,
+                          Math.max(
+                            0,
+                            Number(item?.percentage || 0)
+                          )
+                        )}%`,
+                      }}
+                    />
+                  </div>
+
+                  <div className="mt-2 text-[11px] text-slate-500">
+                    Absolute SHAP:{' '}
+                    {formatNumber(
+                      item?.absolute_shap,
+                      6
+                    )}
                   </div>
                 </div>
               ))}
+
             </div>
-          </Card>
-        </div>
 
-        {/* TEMPORAL ATTRIBUTION */}
-        <Card className="mb-6 p-6">
-          <SectionHeader
-            icon={Clock3}
-            title="Temporal reasoning"
-            subtitle="Post-hoc temporal attribution across the five-state LSTM sequence"
-          />
+            <div className="mt-5 rounded-xl bg-slate-50 p-4 text-xs leading-5 text-slate-600">
+              This temporal view is derived from the absolute SHAP
+              contribution of each timestep. It is a post-hoc attribution
+              method and should not be described as internal learned
+              attention.
+            </div>
 
-          <div className="grid gap-4 md:grid-cols-5">
-            {temporalAttribution.map((item) => (
-              <div
-                key={item.timestep}
-                className="rounded-xl border border-slate-800 bg-slate-900/60 p-4"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs uppercase tracking-wider text-slate-500">
-                    Timestep {item.timestep}
-                  </span>
+          </section>
 
-                  <span className="text-xs text-slate-500">
-                    {item.label}
-                  </span>
+          {/* -------------------------------------------------------------- */}
+          {/* WORLD MODEL */}
+          {/* -------------------------------------------------------------- */}
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+
+              <div>
+                <h2 className="text-lg font-bold text-slate-900">
+                  Packet-Level World Model Research
+                </h2>
+
+                <p className="mt-1 max-w-3xl text-sm text-slate-500">
+                  Separate research pipeline using packet-graph snapshots
+                  and temporal latent dynamics. This pipeline is not the
+                  production CTU13 attack-risk classifier.
+                </p>
+              </div>
+
+              <span className="rounded-full bg-purple-50 px-3 py-1 text-xs font-semibold text-purple-700">
+                RESEARCH PIPELINE
+              </span>
+
+            </div>
+
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+
+              <div className="rounded-2xl bg-slate-50 p-5">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Graph Snapshots
                 </div>
 
-                <p className="mt-3 text-2xl font-bold text-white">
-                  {Number(item.percentage || 0).toFixed(2)}%
-                </p>
+                <div className="mt-2 text-2xl font-bold text-slate-900">
+                  {formatNumber(
+                    worldModel.graphSnapshots,
+                    0
+                  )}
+                </div>
 
-                <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-800">
-                  <div
-                    className="h-full rounded-full bg-slate-300"
-                    style={{
-                      width: `${Number(item.percentage || 0)}%`,
-                    }}
-                  />
+                <div className="mt-1 text-xs text-slate-500">
+                  30-second packet windows
                 </div>
               </div>
-            ))}
-          </div>
 
-          <p className="mt-4 text-xs leading-5 text-slate-500">
-            This is post-hoc temporal attribution, not an internal
-            neural attention layer. Each timestep is perturbed against
-            a baseline and the resulting change in model probability
-            is used to estimate relative temporal influence.
-          </p>
-        </Card>
+              <div className="rounded-2xl bg-slate-50 p-5">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Graph Encoder
+                </div>
 
-        {/* WORLD MODEL */}
-        <Card className="mb-6 p-6">
-          <SectionHeader
-            icon={Network}
-            title="World-model research"
-            subtitle="Packet-level graph representation and latent network-dynamics forecasting"
-          />
+                <div className="mt-2 text-2xl font-bold text-slate-900">
+                  {worldModel.graphEncoder}
+                </div>
 
-          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-500">
-                Graph snapshots
-              </p>
+                <div className="mt-1 text-xs text-slate-500">
+                  Packet interaction representation
+                </div>
+              </div>
 
-              <p className="mt-2 text-2xl font-bold text-white">
-                {worldModel.snapshots}
-              </p>
+              <div className="rounded-2xl bg-slate-50 p-5">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Temporal Model
+                </div>
 
-              <p className="mt-1 text-xs text-slate-500">
-                30-second packet windows
+                <div className="mt-2 text-xl font-bold text-slate-900">
+                  {worldModel.temporalModel}
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  Learned latent dynamics
+                </div>
+              </div>
+
+              <div className="rounded-2xl bg-slate-50 p-5">
+                <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                  Forecast Horizon
+                </div>
+
+                <div className="mt-2 text-xl font-bold text-slate-900">
+                  {worldModel.horizon}
+                </div>
+
+                <div className="mt-1 text-xs text-slate-500">
+                  Autoregressive latent rollout
+                </div>
+              </div>
+
+            </div>
+
+            <div className="mt-6">
+              <h3 className="mb-3 text-sm font-bold text-slate-900">
+                K-Step Latent Forecast Improvement
+              </h3>
+
+              <div className="grid gap-3 md:grid-cols-3">
+
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-xs font-semibold text-slate-500">
+                    T+1
+                  </div>
+
+                  <div className="mt-2 text-xl font-bold text-slate-900">
+                    {worldModel.t1}
+                  </div>
+
+                  <div className="mt-1 text-xs text-slate-500">
+                    vs persistence baseline
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-xs font-semibold text-slate-500">
+                    T+2
+                  </div>
+
+                  <div className="mt-2 text-xl font-bold text-slate-900">
+                    {worldModel.t2}
+                  </div>
+
+                  <div className="mt-1 text-xs text-slate-500">
+                    vs persistence baseline
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 p-4">
+                  <div className="text-xs font-semibold text-slate-500">
+                    T+3
+                  </div>
+
+                  <div className="mt-2 text-xl font-bold text-slate-900">
+                    {worldModel.t3}
+                  </div>
+
+                  <div className="mt-1 text-xs text-slate-500">
+                    vs persistence baseline
+                  </div>
+                </div>
+
+              </div>
+            </div>
+
+            <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-xs leading-5 text-amber-800">
+              <strong>Scope:</strong> these forecasts represent latent
+              network-dynamics prediction. They are not trained attack-risk
+              probabilities, MITRE ATT&CK stage predictions, or production
+              early-warning outputs.
+            </div>
+
+          </section>
+
+          {/* -------------------------------------------------------------- */}
+          {/* EVIDENCE / LIMITATIONS */}
+          {/* -------------------------------------------------------------- */}
+
+          <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+
+            <div>
+              <h2 className="text-lg font-bold text-slate-900">
+                Evidence & Limitations
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-500">
+                What this research demo demonstrates and what it does not
+                claim
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-500">
-                Graph encoder
-              </p>
+            <div className="mt-5 grid gap-5 md:grid-cols-2">
 
-              <p className="mt-2 text-lg font-bold text-white">
-                {worldModel.graphEncoder}
-              </p>
+              <div>
+                <h3 className="mb-3 text-sm font-bold text-emerald-700">
+                  Demonstrated
+                </h3>
 
-              <p className="mt-1 text-xs text-slate-500">
-                Flow topology representation
+                <ul className="space-y-2 text-sm leading-6 text-slate-600">
+                  <li>
+                    • Real CTU13 network-state features
+                  </li>
+
+                  <li>
+                    • Production 5 × 12 CTU13 LSTM inference
+                  </li>
+
+                  <li>
+                    • Prediction-specific live SHAP
+                  </li>
+
+                  <li>
+                    • Five-timestep post-hoc temporal attribution
+                  </li>
+
+                  <li>
+                    • Separate packet-level graph representation
+                  </li>
+
+                  <li>
+                    • GraphSAGE-style spatial encoding
+                  </li>
+
+                  <li>
+                    • Temporal Transformer latent dynamics
+                  </li>
+                </ul>
+              </div>
+
+              <div>
+                <h3 className="mb-3 text-sm font-bold text-amber-700">
+                  Limitations
+                </h3>
+
+                <ul className="space-y-2 text-sm leading-6 text-slate-600">
+                  <li>
+                    • Live SHAP accepts a 5 × 12 network-state sequence,
+                    not arbitrary PCAP uploads.
+                  </li>
+
+                  <li>
+                    • Temporal attribution is post-hoc, not learned
+                    attention.
+                  </li>
+
+                  <li>
+                    • The packet world model is separate from the production
+                    CTU13 LSTM.
+                  </li>
+
+                  <li>
+                    • World-model rollout predicts latent network dynamics,
+                    not attack stages.
+                  </li>
+
+                  <li>
+                    • CTU13 and DAPT2020 are separate datasets and are not
+                    timestamp-synchronized.
+                  </li>
+
+                  <li>
+                    • No unsupported attack-stage labels are fabricated for
+                    the packet graph pipeline.
+                  </li>
+                </ul>
+              </div>
+
+            </div>
+
+          </section>
+
+          {/* -------------------------------------------------------------- */}
+          {/* TECHNICAL TRACE */}
+          {/* -------------------------------------------------------------- */}
+
+          <section className="rounded-2xl border border-slate-200 bg-slate-900 p-6 text-white shadow-sm">
+
+            <div>
+              <h2 className="text-lg font-bold">
+                Live Inference Trace
+              </h2>
+
+              <p className="mt-1 text-sm text-slate-300">
+                Exact pipeline executed for this Research Demo refresh
               </p>
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-500">
-                Temporal model
-              </p>
+            <div className="mt-6 grid gap-3 md:grid-cols-5">
 
-              <p className="mt-2 text-lg font-bold text-white">
-                {worldModel.temporalModel}
-              </p>
+              {[
+                'CTU13 network states',
+                'Latest 5 states',
+                '12 production features',
+                'CTU13 LSTM',
+                'Live GradientExplainer',
+              ].map((step, index) => (
+                <div
+                  key={step}
+                  className="rounded-xl border border-slate-700 bg-slate-800 p-4"
+                >
+                  <div className="text-xs font-bold text-slate-400">
+                    STEP {index + 1}
+                  </div>
 
-              <p className="mt-1 text-xs text-slate-500">
-                Learned temporal dynamics
-              </p>
+                  <div className="mt-2 text-sm font-semibold">
+                    {step}
+                  </div>
+                </div>
+              ))}
+
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-500">
-                T+1 / T+2
-              </p>
-
-              <p className="mt-2 text-lg font-bold text-white">
-                {worldModel.t1} / {worldModel.t2}
-              </p>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Improvement vs persistence
-              </p>
+            <div className="mt-5 rounded-xl border border-slate-700 bg-slate-800 p-4 text-xs leading-5 text-slate-300">
+              The explanation shown above is generated from the same
+              five-state sequence used to produce the current CTU13 LSTM
+              prediction. The frontend no longer requests the legacy
+              <code className="mx-1 rounded bg-slate-700 px-1.5 py-0.5">
+                INC-8042
+              </code>
+              precomputed explanation.
             </div>
 
-            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-              <p className="text-xs uppercase tracking-wider text-slate-500">
-                T+3
-              </p>
-
-              <p className="mt-2 text-lg font-bold text-white">
-                {worldModel.t3}
-              </p>
-
-              <p className="mt-1 text-xs text-slate-500">
-                Improvement vs persistence
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-xl border border-slate-800 bg-slate-900/40 p-4">
-            <p className="text-sm font-semibold text-slate-200">
-              Forecasting scope
-            </p>
-
-            <p className="mt-1 text-sm leading-6 text-slate-500">
-              The world model forecasts latent network dynamics
-              autoregressively for T+1, T+2, and T+3. These results
-              demonstrate learned network-state dynamics and are not
-              presented as independently trained attack-risk or
-              MITRE-stage predictions.
-            </p>
-          </div>
-        </Card>
-
-        {/* EVIDENCE / LIMITATIONS */}
-        <Card className="p-6">
-          <SectionHeader
-            icon={ShieldAlert}
-            title="Evidence and limitations"
-            subtitle="Keep the research claims aligned with what was actually evaluated"
-          />
-
-          <div className="grid gap-4 md:grid-cols-2">
-            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-              <p className="font-semibold text-slate-200">
-                Evidence
-              </p>
-
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-500">
-                <li>• CTU13 flow/network-state LSTM early warning</li>
-                <li>• SHAP global, local and temporal feature attribution</li>
-                <li>• Post-hoc five-timestep temporal attribution</li>
-                <li>• DAPT2020 packet-level PCAP extraction</li>
-                <li>• GraphSAGE + Temporal Transformer world model</li>
-                <li>• Autoregressive T+1/T+2/T+3 latent rollout</li>
-              </ul>
-            </div>
-
-            <div className="rounded-xl border border-slate-800 bg-slate-900/50 p-4">
-              <p className="font-semibold text-slate-200">
-                Limitations
-              </p>
-
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-500">
-                <li>• CTU13 and DAPT2020 timestamps are not synchronized</li>
-                <li>• Packet-level data is evaluated as separate evidence</li>
-                <li>• Temporal attribution is post-hoc, not learned attention</li>
-                <li>• World-model rollout is latent network forecasting</li>
-                <li>• No unsupported attack-stage prediction is claimed</li>
-              </ul>
-            </div>
-          </div>
-        </Card>
-      </div>
+          </section>
+        </>
+      )}
     </div>
   );
 }
