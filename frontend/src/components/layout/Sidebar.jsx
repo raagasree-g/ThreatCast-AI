@@ -11,7 +11,11 @@ import {
   Shield,
   Settings,
   X,
+  Cpu,
+  Database,
+  Radio,
 } from 'lucide-react';
+
 import { NAV_ITEMS } from '../../utils/constants';
 
 const ICON_MAP = {
@@ -27,55 +31,176 @@ const ICON_MAP = {
 export default function Sidebar({ isOpen, onClose }) {
   return (
     <>
+      {/* Mobile backdrop */}
       {isOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm lg:hidden"
+          className="
+            fixed inset-0 z-40
+            bg-black/70
+            backdrop-blur-sm
+            lg:hidden
+          "
           onClick={onClose}
         />
       )}
 
       <aside
-        className={`fixed top-0 left-0 bottom-0 z-50 w-64 bg-[#fcfaf7] text-[#42240f] border-r border-[#ebdcc7] flex flex-col transition-transform duration-300 ease-in-out lg:translate-x-0 ${
-          isOpen ? 'translate-x-0' : '-translate-x-full'
-        }`}
+        className={`
+          fixed top-0 left-0 bottom-0 z-50
+          w-64
+          flex flex-col
+          bg-[#050608]
+          text-[#B8C0C8]
+          border-r border-white/[0.08]
+          shadow-[15px_0_50px_rgba(0,0,0,0.25)]
+          transition-transform duration-300
+          ease-out
+          lg:translate-x-0
+          ${isOpen ? 'translate-x-0' : '-translate-x-full'}
+        `}
       >
-        {/* Brand */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-[#ebdcc7] bg-[#f7f2ea]/80">
-          <div className="flex items-center gap-3">
-            <div className="relative w-9 h-9 rounded-xl bg-gradient-to-br from-[#d97706] to-[#78350f] p-0.5 shadow-sm">
-              <div className="w-full h-full bg-[#fdfcf9] rounded-[10px] flex items-center justify-center">
-                <Shield className="w-5 h-5 text-[#b45309]" />
+
+        {/* =====================================================
+            BRAND
+        ===================================================== */}
+
+        <div className="
+          relative
+          px-5 py-5
+          border-b border-white/[0.08]
+          bg-gradient-to-b from-white/[0.025] to-transparent
+        ">
+
+          <div className="flex items-center justify-between">
+
+            <div className="flex items-center gap-3">
+
+              {/* Chrome logo */}
+              <div className="
+                relative
+                w-10 h-10
+                rounded-xl
+                p-[1px]
+                bg-gradient-to-br
+                from-[#E8EDF2]
+                via-[#59636D]
+                to-[#151A20]
+                shadow-[0_0_20px_rgba(184,192,200,0.08)]
+              ">
+                <div className="
+                  relative
+                  w-full h-full
+                  rounded-[11px]
+                  flex items-center justify-center
+                  bg-[#080A0D]
+                  overflow-hidden
+                ">
+                  <div className="
+                    absolute
+                    inset-0
+                    bg-[radial-gradient(circle_at_50%_20%,rgba(0,229,255,0.16),transparent_55%)]
+                  " />
+
+                  <Shield className="
+                    relative
+                    w-5 h-5
+                    text-[#E8EDF2]
+                    drop-shadow-[0_0_7px_rgba(0,229,255,0.45)]
+                  " />
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center gap-2">
+
+                  <span className="
+                    font-extrabold
+                    tracking-[0.16em]
+                    text-sm
+                    font-mono
+                    text-[#E8EDF2]
+                  ">
+                    THREATCAST
+                  </span>
+
+                  <span className="
+                    text-[8px]
+                    font-bold
+                    tracking-wider
+                    px-1.5 py-0.5
+                    rounded
+                    bg-[#00E5FF]/10
+                    text-[#00E5FF]
+                    border border-[#00E5FF]/25
+                    shadow-[0_0_10px_rgba(0,229,255,0.08)]
+                  ">
+                    AI
+                  </span>
+                </div>
+
+                <p className="
+                  mt-1
+                  text-[9px]
+                  tracking-[0.16em]
+                  text-[#59636D]
+                  uppercase
+                  font-semibold
+                ">
+                  Early Warning Engine
+                </p>
               </div>
             </div>
 
-            <div>
-              <div className="flex items-center gap-1.5">
-                <span className="font-extrabold tracking-wider text-sm text-[#301a0a] font-mono">
-                  THREATCAST
-                </span>
-
-                <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-[#fef3c7] text-[#b45309] border border-[#fde68a]">
-                  AI
-                </span>
-              </div>
-
-              <p className="text-[10px] tracking-widest text-[#7a644c] uppercase font-semibold">
-                Early Warning Engine
-              </p>
-            </div>
+            <button
+              onClick={onClose}
+              className="
+                lg:hidden
+                p-1.5
+                rounded-lg
+                text-[#59636D]
+                hover:text-[#E8EDF2]
+                hover:bg-white/[0.05]
+                transition-all
+              "
+              aria-label="Close navigation"
+            >
+              <X className="w-4 h-4" />
+            </button>
           </div>
 
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-[#7a644c] hover:text-[#301a0a] hover:bg-[#f5efe6] lg:hidden"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          {/* Decorative line */}
+          <div className="
+            mt-5
+            h-px
+            bg-gradient-to-r
+            from-[#00E5FF]/30
+            via-[#B8C0C8]/15
+            to-transparent
+          " />
         </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 py-5 space-y-1.5 overflow-y-auto">
-          <div className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-[#998165] font-mono">
+        {/* =====================================================
+            NAVIGATION
+        ===================================================== */}
+
+        <nav className="
+          flex-1
+          px-3
+          py-5
+          space-y-1
+          overflow-y-auto
+        ">
+
+          <div className="
+            px-3
+            pb-3
+            text-[9px]
+            font-bold
+            uppercase
+            tracking-[0.2em]
+            text-[#59636D]
+            font-mono
+          ">
             Platform Intelligence
           </div>
 
@@ -88,34 +213,92 @@ export default function Sidebar({ isOpen, onClose }) {
                 to={item.path}
                 onClick={() => onClose && onClose()}
                 className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all group ${
+                  `
+                  relative
+                  flex items-center gap-3
+                  px-3 py-2.5
+                  rounded-xl
+                  text-xs
+                  font-semibold
+                  group
+                  transition-all duration-200
+
+                  ${
                     isActive
-                      ? 'bg-[#f5efe6] text-[#78350f] border-l-3 border-[#b45309] font-bold shadow-xs'
-                      : 'text-[#544230] hover:text-[#221207] hover:bg-[#f7f2ea]'
-                  }`
+                      ? `
+                        bg-[#11161B]
+                        text-[#E8EDF2]
+                        border border-[#00E5FF]/15
+                        shadow-[inset_0_1px_0_rgba(255,255,255,0.035),0_0_20px_rgba(0,229,255,0.04)]
+                      `
+                      : `
+                        text-[#718096]
+                        border border-transparent
+                        hover:text-[#B8C0C8]
+                        hover:bg-white/[0.025]
+                        hover:border-white/[0.06]
+                      `
+                  }
+                  `
                 }
               >
                 {({ isActive }) => (
                   <>
+                    {/* Active indicator */}
+                    {isActive && (
+                      <span className="
+                        absolute
+                        left-0
+                        top-2.5
+                        bottom-2.5
+                        w-[2px]
+                        rounded-full
+                        bg-[#00E5FF]
+                        shadow-[0_0_10px_rgba(0,229,255,0.9)]
+                      " />
+                    )}
+
                     <Icon
-                      className={`w-4 h-4 transition-colors ${
-                        isActive
-                          ? 'text-[#b45309]'
-                          : 'text-[#998165] group-hover:text-[#b45309]'
-                      }`}
+                      className={`
+                        w-4 h-4
+                        transition-all
+                        ${
+                          isActive
+                            ? 'text-[#00E5FF] drop-shadow-[0_0_6px_rgba(0,229,255,0.5)]'
+                            : 'text-[#59636D] group-hover:text-[#B8C0C8]'
+                        }
+                      `}
                     />
 
-                    <span className="flex-1">{item.label}</span>
+                    <span className="flex-1">
+                      {item.label}
+                    </span>
 
                     {item.id === 'forecast' && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#b45309] border border-[#fde68a] font-bold">
+                      <span className="
+                        text-[8px]
+                        font-mono
+                        px-1.5 py-0.5
+                        rounded
+                        bg-[#00E5FF]/10
+                        text-[#00E5FF]
+                        border border-[#00E5FF]/20
+                      ">
                         LSTM
                       </span>
                     )}
 
                     {item.id === 'disagreements' && (
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-[#fef3c7] text-[#b45309] border border-[#fde68a] font-bold">
-                        Signal
+                      <span className="
+                        text-[8px]
+                        font-mono
+                        px-1.5 py-0.5
+                        rounded
+                        bg-[#A855F7]/10
+                        text-[#A855F7]
+                        border border-[#A855F7]/20
+                      ">
+                        SIGNAL
                       </span>
                     )}
                   </>
@@ -125,60 +308,175 @@ export default function Sidebar({ isOpen, onClose }) {
           })}
         </nav>
 
-        {/* System Status */}
-        <div className="p-4 border-t border-[#ebdcc7] bg-[#f7f2ea]/60 space-y-2.5">
-          <div className="p-3 rounded-xl bg-white border border-[#ebdcc7] space-y-2 shadow-xs">
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-[#7a644c] flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#65a30d]" />
+        {/* =====================================================
+            SYSTEM STATUS
+        ===================================================== */}
+
+        <div className="
+          p-4
+          border-t border-white/[0.08]
+          bg-gradient-to-t
+          from-[#030405]
+          to-transparent
+          space-y-3
+        ">
+
+          <div className="
+            relative
+            p-3
+            rounded-xl
+            bg-[#0D1115]
+            border border-white/[0.08]
+            overflow-hidden
+          ">
+
+            {/* subtle cyan glow */}
+            <div className="
+              absolute
+              -top-10
+              -right-10
+              w-24 h-24
+              rounded-full
+              bg-[#00E5FF]/5
+              blur-2xl
+            " />
+
+            <div className="
+              relative
+              flex items-center justify-between
+              text-[10px]
+            ">
+              <span className="flex items-center gap-2 text-[#718096]">
+                <span className="
+                  w-1.5 h-1.5
+                  rounded-full
+                  bg-[#00FF9C]
+                  shadow-[0_0_7px_rgba(0,255,156,0.9)]
+                " />
                 CTU13 LSTM
               </span>
 
-              <span className="font-mono text-[#4d7c0f] text-[10px] font-bold">
-                Active
+              <span className="
+                font-mono
+                text-[#00FF9C]
+                font-bold
+              ">
+                ACTIVE
               </span>
             </div>
 
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-[#7a644c] flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#d97706]" />
-                API Contract
+            <div className="
+              mt-3
+              flex items-center justify-between
+              text-[10px]
+            ">
+              <span className="flex items-center gap-2 text-[#718096]">
+                <span className="
+                  w-1.5 h-1.5
+                  rounded-full
+                  bg-[#00E5FF]
+                  shadow-[0_0_7px_rgba(0,229,255,0.8)]
+                " />
+                API CONTRACT
               </span>
 
-              <span className="font-mono text-[#544230] text-[10px] font-medium">
-                FastAPI:8000
+              <span className="
+                font-mono
+                text-[#B8C0C8]
+              ">
+                FASTAPI:8000
               </span>
             </div>
 
-            <div className="flex items-center justify-between text-[11px]">
-              <span className="text-[#7a644c] flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-[#78716c]" />
-                Input Window
+            <div className="
+              mt-3
+              flex items-center justify-between
+              text-[10px]
+            ">
+              <span className="flex items-center gap-2 text-[#718096]">
+                <span className="
+                  w-1.5 h-1.5
+                  rounded-full
+                  bg-[#59636D]
+                " />
+                INPUT WINDOW
               </span>
 
-              <span className="font-mono text-[#544230] text-[10px] font-medium">
+              <span className="
+                font-mono
+                text-[#B8C0C8]
+              ">
                 5 × 30s
               </span>
             </div>
           </div>
 
-          <div className="flex items-center justify-between pt-1 px-1 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-lg bg-[#f5efe6] flex items-center justify-center text-[#542e14] font-bold text-xs border border-[#ded0bc]">
-                TC
+          {/* User / Console */}
+          <div className="
+            flex items-center justify-between
+            pt-1
+            px-1
+          ">
+
+            <div className="flex items-center gap-2.5">
+
+              <div className="
+                w-8 h-8
+                rounded-lg
+                p-[1px]
+                bg-gradient-to-br
+                from-[#E8EDF2]
+                to-[#59636D]
+              ">
+                <div className="
+                  w-full h-full
+                  rounded-[7px]
+                  flex items-center justify-center
+                  bg-[#0D1115]
+                  text-[#E8EDF2]
+                  font-bold
+                  text-[9px]
+                  font-mono
+                ">
+                  TC
+                </div>
               </div>
 
               <div>
-                <p className="text-[11px] font-bold text-[#301a0a] leading-tight">
+                <p className="
+                  text-[10px]
+                  font-bold
+                  text-[#B8C0C8]
+                  leading-tight
+                ">
                   SecOps Lead
                 </p>
-                <p className="text-[9px] text-[#7a644c] font-mono">
-                  SOC Analyst Console
+
+                <p className="
+                  mt-0.5
+                  text-[8px]
+                  text-[#59636D]
+                  font-mono
+                ">
+                  SOC ANALYST CONSOLE
                 </p>
               </div>
             </div>
 
-            <Settings className="w-4 h-4 text-[#998165]" />
+            <button
+              className="
+                w-7 h-7
+                rounded-lg
+                flex items-center justify-center
+                text-[#59636D]
+                hover:text-[#B8C0C8]
+                hover:bg-white/[0.04]
+                transition-all
+              "
+              aria-label="Settings"
+            >
+              <Settings className="w-3.5 h-3.5" />
+            </button>
           </div>
         </div>
       </aside>

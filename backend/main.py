@@ -17,6 +17,7 @@ from backend.routes.incidents import router as incidents_router
 from backend.routes.explainability import router as explainability_router
 from backend.routes.demo import router as demo_router
 from backend.routes.database import router as database_router
+from backend.routes.world_model import router as world_model_router
 
 
 # ============================================================
@@ -126,6 +127,7 @@ app.include_router(disagreements_router)
 app.include_router(incidents_router)
 app.include_router(explainability_router)
 app.include_router(demo_router)
+app.include_router(world_model_router)
 
 # Neo4j database routes
 app.include_router(database_router)

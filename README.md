@@ -1,60 +1,55 @@
-# ThreatCast-AI: AI-Based Network Attack Forecasting
+# ThreatCast AI
 
-**SIH 2026 Submission | Problem Statement ID: PS26153**
-*Title: AI-Based Network Attack Forecasting from Network Traffic Data*
+### AI-Powered Early Warning for Network Threats
 
----
+ThreatCast is an explainable cybersecurity intelligence platform that predicts whether a network state is likely to transition into an attack condition within a future warning horizon.
 
-## Executive Summary
-ThreatCast-AI is an end-to-end network attack forecasting framework designed to predict cyber attack progression before security breaches fully manifest. Unlike conventional static intrusion detection systems (IDS) that trigger post-breach reactive alerts, ThreatCast-AI models **network state transition dynamics** using a **Dual-Head World Model LSTM** to provide early warning attack predictions with an autoregressive $k=3$ step forward rollout.
+The production system uses a temporal LSTM trained on the CTU13 botnet dataset. Network traffic is converted into 30-second network states, represented using 12 engineered temporal features, and evaluated using a 5-state temporal window.
 
----
+ThreatCast combines:
 
-## Key Features & PS26153 Technical Capabilities
-
-1. **Dual-Head World Model LSTM (`world_model_lstm.py`)**:
-   - **State Regression Head (`state_head`)**: Predicts the continuous 12-feature raw network state vector $x_{t+1}$ at time $t+1$ (MSE Loss).
-   - **Infiltration Classification Head (`infil_head`)**: Predicts early-warning attack probability $P(t+1)$ (BCE Loss).
-   - **Autoregressive $k$-Step Rollout**: Implements `k_step_rollout(model, x, k=3)` feeding predicted feature vectors back into future sequence buffers across $k=3$ steps.
-
-2. **Honest Baseline Benchmarking (`compare_baselines.py`)**:
-   - Compares **Single-Window Logistic Regression** ($F1 = 0.0333$), **5-Window Sequence-Flattened Logistic Regression** ($F1 = 0.2397$), and **5-Window LSTM** ($F1 = 0.2759$) on identical test splits.
-   - Demonstrates measurable F1 score improvements from temporal sequence modeling.
-
-3. **Flag-Derived Pseudo-Packet Features**:
-   - Computes TCP flag ratio aggregates (`syn_ratio`, `fin_ratio`, `rst_ratio`, `syn_without_ack_count`) for CTU-13 (`create_network_states.py`) and DAPT2020 (`create_dapt2020_states.py`).
-
-4. **Explainability & ATT&CK Alignment**:
-   - SHAP feature attribution (`explain_lstm_shap.py`, `explain_dapt2020_shap.py`).
-   - MITRE ATT&CK mapping with confidence scoring (`mitre_attack_mapping.py`, `mitre_dapt2020_mapping.py`).
-
-5. **Full-Stack Application & Neo4j Integration**:
-   - FastAPI REST API service (`backend/main.py`).
-   - React + Vite dashboard frontend (`frontend/`).
-   - Neo4j graph database integration for network topology.
+- Temporal deep learning
+- Early-warning prediction
+- SHAP-based explainability
+- MITRE ATT&CK-oriented threat interpretation
+- Neo4j graph-based data storage
+- FastAPI backend services
+- React cybersecurity dashboard
+- Packet-level graph research
+- GraphSAGE-style representation learning
+- Temporal Transformer-based latent forecasting
 
 ---
 
-## Core Scripts & Execution
+## 1. System Overview
 
-### 1. Run World Model Dual-Head LSTM
-```bash
-python world_model_lstm.py
-```
+ThreatCast is designed around a simple production principle:
 
-### 2. Run Baseline Comparisons
-```bash
-python compare_baselines.py
-```
+> **Observe network behavior → model temporal evolution → predict early warning → explain the prediction → present actionable intelligence.**
 
-### 3. Run Preprocessing & Datasets
-```bash
-python preprocess_ctu.py
-python create_all_network_states.py
-python create_sequences.py
-```
+The production inference pipeline is:
 
----
-
-## Documentation
-For complete technical details, mathematical formulations, multi-task loss definitions, baseline metric tables, and cross-scenario generalization analysis, refer to [architecture_document.md](architecture_document.md).
+```text
+CTU13 Network Flows
+        ↓
+30-Second Network-State Aggregation
+        ↓
+12 Engineered Features
+        ↓
+5 × 30-Second Temporal Window
+        ↓
+CTU13 LSTM
+        ↓
+Early-Warning Probability
+        ↓
+8% Decision Threshold
+        ↓
+Normal / Early Warning
+        ↓
+SHAP Explanation
+        ↓
+FastAPI
+        ↓
+Neo4j
+        ↓
+React Dashboard
