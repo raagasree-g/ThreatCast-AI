@@ -29,8 +29,12 @@ from world_model.attack_stage import (
 )
 
 from world_model.ctu13_risk_inference import (
-    predict_world_model,
     predict_world_model_batch,
+)
+
+from world_model.stage_inference import (
+    get_stage_model_info,
+    predict_stage_with_evidence,
 )
 
 
@@ -54,6 +58,41 @@ def _validate_scenario(
         )
 
 
+def _detect_scenario(
+    dataframe,
+    scenario: int | None,
+) -> int | None:
+    """
+    Resolve the scenario from the explicit query parameter
+    or from the uploaded dataframe.
+
+    Explicit scenario always takes priority.
+    """
+
+    if scenario is not None:
+        return int(scenario)
+
+    if (
+        "Scenario" in dataframe.columns
+        and len(dataframe) > 0
+    ):
+        try:
+            detected = int(
+                dataframe["Scenario"].iloc[-1]
+            )
+
+            if 1 <= detected <= 13:
+                return detected
+
+        except (
+            TypeError,
+            ValueError,
+        ):
+            pass
+
+    return None
+
+
 def _get_stage(
     scenario: int | None,
 ) -> dict | None:
@@ -64,7 +103,9 @@ def _get_stage(
     if not 1 <= scenario <= 13:
         return None
 
-    return get_primary_stage(scenario)
+    return get_primary_stage(
+        scenario
+    )
 
 
 def _save_upload(
@@ -155,14 +196,26 @@ def get_stage(
     scenario: int,
 ):
     """
-    Return documented CTU13 activity -> ATT&CK interpretation.
+    Return both:
+
+    1. The documented CTU13 activity -> ATT&CK interpretation.
+    2. The trained weakly-supervised stage prediction.
 
     IMPORTANT:
-    This is NOT a trained MITRE ATT&CK classifier because
-    CTU13 does not provide ground-truth MITRE stage labels.
+    CTU13 does not contain timestamp-level ground-truth
+    MITRE ATT&CK tactic labels.
+
+    Therefore the trained stage head is explicitly reported
+    as weakly supervised rather than ground-truth supervised.
     """
 
-    _validate_scenario(scenario)
+    _validate_scenario(
+        scenario
+    )
+
+    # --------------------------------------------------------
+    # Existing documented CTU13 interpretation
+    # --------------------------------------------------------
 
     stages = get_scenario_stages(
         scenario
@@ -172,21 +225,154 @@ def get_stage(
         scenario
     )
 
-    return {
-        "scenario": scenario,
-        "primary_stage": primary,
-        "stages": stages,
-        "source": (
-            "CTU13 documented activity interpretation"
-        ),
-        "trained_stage_classifier": False,
-        "note": (
-            "CTU13 does not provide ground-truth "
-            "MITRE ATT&CK stage labels. These are "
-            "activity-level interpretations and must "
-            "not be presented as trained stage predictions."
-        ),
-    }
+    # --------------------------------------------------------
+    # Build a real 5-state sequence from the canonical CTU13
+    # dataset for stage inference.
+    #
+    # The stage endpoint is scenario-based, so this endpoint
+    # uses the latest available five states from that scenario.
+    # --------------------------------------------------------
+
+    try:
+
+        dataset_path = (
+            Path("data")
+            / "CTU13"
+            / "all_network_states.csv"
+        )
+
+        if not dataset_path.exists():
+            raise FileNotFoundError(
+                f"CTU13 dataset not found: "
+                f"{dataset_path}"
+            )
+
+        result = prepare_uploaded_csv(
+            dataset_path,
+            scenario=scenario,
+        )
+
+        dataframe = result[
+            "dataframe"
+        ]
+
+        payload = result[
+            "payload"
+        ]
+
+        sequence = payload[
+            "sequence"
+        ]
+
+        trained_prediction = (
+            predict_stage_with_evidence(
+                sequence,
+                scenario=scenario,
+            )
+        )
+
+        return {
+            "success": True,
+            "scenario": scenario,
+
+            # Existing documented interpretation.
+            "primary_stage": primary,
+            "stages": stages,
+
+            # New trained prediction.
+            "trained_stage_prediction": (
+                trained_prediction
+            ),
+
+            "source": (
+                "CTU13 documented activity "
+                "interpretation + frozen weakly-supervised "
+                "stage head"
+            ),
+
+            "trained_stage_classifier": True,
+
+            "supervision": (
+                "weakly supervised"
+            ),
+
+            "ground_truth_timestamped_mitre_labels": (
+                False
+            ),
+
+            "scenario_13_used_for_training": (
+                False
+            ),
+
+            "scenario_13_used_for_model_selection": (
+                False
+            ),
+
+            "scenario_13_used_for_threshold_selection": (
+                False
+            ),
+
+            "note": (
+                "The stage head predicts Discovery, "
+                "Command and Control, and Impact from "
+                "the frozen 64-D CTU13 world-model latent. "
+                "CTU13 does not provide timestamp-level "
+                "ground-truth MITRE ATT&CK labels, so "
+                "stage predictions are weakly supervised "
+                "and should not be described as "
+                "ground-truth MITRE classification."
+            ),
+
+            "states_used": len(
+                dataframe
+            ),
+
+            "sequence_length": (
+                SEQUENCE_LENGTH
+            ),
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Stage inference failed: "
+                f"{exc}"
+            ),
+        ) from exc
+
+
+# ============================================================
+# STAGE MODEL INFORMATION
+# ============================================================
+
+@router.get("/stage-model-info")
+def stage_model_info():
+    """
+    Return metadata for the trained weakly-supervised
+    MITRE stage head.
+    """
+
+    try:
+
+        return {
+            "success": True,
+            **get_stage_model_info(),
+        }
+
+    except Exception as exc:
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Unable to load stage model information: "
+                f"{exc}"
+            ),
+        ) from exc
 
 
 # ============================================================
@@ -222,9 +408,13 @@ async def run_csv_inference(
     Run the existing production CTU13 LSTM on an uploaded CSV.
     """
 
-    _validate_scenario(scenario)
+    _validate_scenario(
+        scenario
+    )
 
-    temp_path, _ = _save_upload(file)
+    temp_path, _ = _save_upload(
+        file
+    )
 
     try:
 
@@ -253,18 +443,12 @@ async def run_csv_inference(
             ]
         )
 
-        detected_scenario = scenario
-
-        if (
-            detected_scenario is None
-            and "Scenario" in dataframe.columns
-            and len(dataframe) > 0
-        ):
-            detected_scenario = int(
-                dataframe[
-                    "Scenario"
-                ].iloc[-1]
+        detected_scenario = (
+            _detect_scenario(
+                dataframe,
+                scenario,
             )
+        )
 
         stage = _get_stage(
             detected_scenario
@@ -329,18 +513,27 @@ async def world_model_risk(
     Run the trained CTU13 risk world model.
 
     The complete uploaded scenario is converted into
-    chronological 5-state windows. Raw risk logits from
-    all windows are collected first so the frozen
-    scenario-adaptive calibration can calculate the
-    scenario score distribution.
+    chronological 5-state windows.
 
-    The API returns the calibrated prediction for the
-    latest available 5-state window.
+    Raw risk logits from all windows are collected first
+    so the frozen scenario-adaptive calibration can calculate
+    the scenario score distribution.
+
+    The endpoint returns:
+
+        - calibrated T+1 / T+2 / T+3 risk
+        - trained stage prediction
+        - MITRE interpretation
+        - feature-level evidence
     """
 
-    _validate_scenario(scenario)
+    _validate_scenario(
+        scenario
+    )
 
-    temp_path, _ = _save_upload(file)
+    temp_path, _ = _save_upload(
+        file
+    )
 
     try:
 
@@ -363,6 +556,21 @@ async def world_model_risk(
             "payload"
         ]
 
+        # --------------------------------------------------------
+        # Scenario detection
+        # --------------------------------------------------------
+
+        detected_scenario = (
+            _detect_scenario(
+                dataframe,
+                scenario,
+            )
+        )
+
+        # --------------------------------------------------------
+        # Risk-world-model sequences
+        # --------------------------------------------------------
+
         sequences = (
             _build_world_model_sequences(
                 dataframe
@@ -375,34 +583,126 @@ async def world_model_risk(
             )
         )
 
-        detected_scenario = scenario
+        # --------------------------------------------------------
+        # Trained stage prediction on the latest 5-state history
+        #
+        # payload["sequence"] is the canonical normalized
+        # 5 x 12 sequence produced by the existing input
+        # pipeline.
+        # --------------------------------------------------------
 
-        if (
-            detected_scenario is None
-            and "Scenario" in dataframe.columns
-            and len(dataframe) > 0
-        ):
-            detected_scenario = int(
-                dataframe[
-                    "Scenario"
-                ].iloc[-1]
+        stage_prediction = (
+            predict_stage_with_evidence(
+                payload[
+                    "sequence"
+                ],
+                scenario=detected_scenario,
             )
+        )
+
+        # --------------------------------------------------------
+        # Existing documented interpretation
+        # --------------------------------------------------------
 
         stage = _get_stage(
             detected_scenario
         )
 
+        # --------------------------------------------------------
+        # Combined response
+        # --------------------------------------------------------
+
         return {
             "success": True,
+
             "pipeline": (
-                "CSV → CTU13 Risk World Model"
+                "CSV → CTU13 Risk World Model "
+                "+ Stage Head"
             ),
+
             "filename": file.filename,
+
             "scenario": detected_scenario,
-            "states": len(dataframe),
+
+            "states": len(
+                dataframe
+            ),
+
+            "sequence_length": (
+                SEQUENCE_LENGTH
+            ),
+
+            "feature_count": len(
+                FEATURE_NAMES
+            ),
+
+            "features": FEATURE_NAMES,
+
             "input": payload,
+
+            # Existing calibrated risk rollout.
             "world_model": world_model_result,
+
+            # Existing documented mapping.
             "stage_interpretation": stage,
+
+            # New trained stage classifier.
+            "trained_stage_prediction": (
+                stage_prediction
+            ),
+
+            "explainability": {
+                "available": True,
+
+                "method": (
+                    "feature-level telemetry evidence"
+                ),
+
+                "feature_evidence": (
+                    stage_prediction[
+                        "evidence"
+                    ]
+                ),
+
+                "raw_port_information_available": (
+                    False
+                ),
+
+                "port_attribution": None,
+
+                "note": (
+                    "The CTU13 world-model input contains "
+                    "12 aggregated traffic features rather "
+                    "than raw source/destination port fields. "
+                    "Therefore the API reports feature-level "
+                    "traffic evidence but does not fabricate "
+                    "port attribution."
+                ),
+            },
+
+            "classifier_scope": {
+                "trained_stage_classifier": True,
+
+                "supervision": (
+                    "weakly supervised"
+                ),
+
+                "ground_truth_timestamped_mitre_labels": (
+                    False
+                ),
+
+                "scenario_13_used_for_training": (
+                    False
+                ),
+
+                "scenario_13_used_for_model_selection": (
+                    False
+                ),
+
+                "scenario_13_used_for_threshold_selection": (
+                    False
+                ),
+            },
         }
 
     except Exception as exc:
@@ -434,6 +734,9 @@ def flagged_flows(
     """
     Return suspicious flow records from a CTU13
     .binetflow file.
+
+    This remains separate from the aggregated
+    world-model feature evidence.
     """
 
     if limit < 1 or limit > 1000:
