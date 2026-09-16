@@ -31,6 +31,8 @@ from backend.ml.pcap_attribution import (
     analyze_pcap_attribution,
     build_prediction_attribution,
 )
+from backend.network_graph_builder import build_network_graph
+from backend.data.network import set_latest_network_graph
 
 from backend.ml.packet_prediction_attribution import (
     build_model_sensitivity_attribution,
@@ -671,6 +673,16 @@ async def world_model_risk(
                     limit=10,
                 )
             )
+
+        # This is a serialization of the existing PCAP evidence, not a new
+        # inference path.  Aggregate CSV inputs correctly produce no fake
+        # host topology.
+        network_graph = build_network_graph(
+            packet_attribution,
+            stage_prediction=stage_prediction,
+            show_all_nodes=True,
+        )
+        set_latest_network_graph(network_graph)
         # ------------------------------------------------------------------
         # Explainability
         # ------------------------------------------------------------------
@@ -717,6 +729,8 @@ async def world_model_risk(
             "pcap_metadata": pcap_metadata,
 
             "packet_evidence": packet_evidence,
+
+            "network_graph": network_graph,
 
             # Global deterministic PCAP flow evidence.
             "packet_attribution": packet_attribution,

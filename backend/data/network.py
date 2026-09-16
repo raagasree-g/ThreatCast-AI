@@ -17,6 +17,28 @@ from backend.models.schemas import (
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+# The world-model upload is the authoritative source for a host topology.
+# Keep only the most recent JSON-safe graph in process memory so the separate
+# Network Graph page can retrieve the same real analysis result.  This is not
+# a fallback graph and is intentionally empty until a PCAP is analyzed.
+_LATEST_ANALYSIS_GRAPH: dict | None = None
+
+
+def set_latest_network_graph(graph: dict | None) -> None:
+    global _LATEST_ANALYSIS_GRAPH
+    _LATEST_ANALYSIS_GRAPH = graph
+
+
+def get_latest_network_graph() -> dict:
+    if _LATEST_ANALYSIS_GRAPH is not None:
+        return _LATEST_ANALYSIS_GRAPH
+    return {
+        "available": False,
+        "reason": "Network graph unavailable: upload and analyze a PCAP with host-level flow evidence first.",
+        "nodes": [], "edges": [], "timeline": [], "statistics": {},
+        "timeline_available": False,
+    }
+
 CTU13_STATES_PATH = (
     PROJECT_ROOT
     / "data"

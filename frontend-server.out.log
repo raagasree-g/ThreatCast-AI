@@ -1,0 +1,13 @@
+
+> threatcast-ai-frontend@1.0.0 dev
+> vite --host 127.0.0.1
+
+
+  VITE v5.4.21  ready in 374 ms
+
+  ➜  Local:   http://127.0.0.1:5173/
+  ➜  press h + enter to show help
+1:55:56 pm [vite] hmr update /src/components/worldmodel/WorldModelUpload.jsx, /src/index.css
+2:13:35 pm [vite] hmr update /src/components/network/NodeDetailsDrawer.jsx, /src/index.css
+2:14:01 pm [vite] hmr update /src/pages/NetworkGraph.jsx, /src/index.css
+2:14:44 pm [vite] hmr update /src/components/network/InteractiveNetworkGraph.jsx, /src/index.css

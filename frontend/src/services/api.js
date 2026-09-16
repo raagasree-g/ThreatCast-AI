@@ -82,8 +82,7 @@ export const getEvents = (params = {}) =>
 
 export const getNetworkGraph = () =>
   safeApiCall(
-    () => apiClient.get('/api/network/graph'),
-    fallbackProvider.getNetworkGraph
+    () => apiClient.get('/api/network/latest-graph')
   );
 
 export const getNetworkActivity = () =>

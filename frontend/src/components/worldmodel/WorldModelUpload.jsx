@@ -6,7 +6,7 @@ import ModelSensitivityAttribution from "./ModelSensitivityAttribution";
 const API_URL =
   import.meta.env.VITE_API_URL !== undefined
     ? `${import.meta.env.VITE_API_URL}/api/world-model/risk`
-    : "/api/world-model/risk";
+    : "http://localhost:8000/api/world-model/risk";
 
 
 const FEATURE_COUNT = 12;
@@ -186,6 +186,10 @@ const rollout =
       }
 
       setResult(data);
+      if (data.network_graph) {
+        sessionStorage.setItem('threatcast.networkGraph', JSON.stringify(data.network_graph));
+        window.dispatchEvent(new Event('threatcast-network-graph'));
+      }
 
     } catch (err) {
 

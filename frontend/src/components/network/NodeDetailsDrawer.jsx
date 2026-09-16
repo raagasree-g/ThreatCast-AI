@@ -21,11 +21,11 @@ export default function NodeDetailsDrawer({ node, onClose }) {
               style={{ backgroundColor: typeStyle.bg }}
             />
             <span className="text-xs font-mono font-bold uppercase text-[#7a644c]">
-              {node.type} • {node.department}
+              {node.type} • {node.status || 'Not available from capture'}
             </span>
           </div>
           <h3 className="text-lg font-bold text-[#221207] mt-1">{node.label}</h3>
-          <p className="text-xs font-mono text-[#7a644c]">{node.ip} • {node.os}</p>
+          <p className="text-xs font-mono text-[#7a644c]">{node.ip || 'Not available from capture'}</p>
         </div>
 
         <button
@@ -60,7 +60,9 @@ export default function NodeDetailsDrawer({ node, onClose }) {
           Current Observed Activity:
         </span>
         <div className="p-3 rounded-xl bg-[#fcfaf7] border border-[#ebdcc7] text-xs text-[#42240f] leading-relaxed font-medium">
-          {node.observed_activity}
+          {node.recent_activity?.length
+            ? node.recent_activity.join('; ')
+            : 'Not available from capture'}
         </div>
       </div>
 
@@ -71,7 +73,9 @@ export default function NodeDetailsDrawer({ node, onClose }) {
           Topological Action Context:
         </span>
         <div className="p-3 rounded-xl bg-[#fffbeb] border border-[#fde68a] text-xs text-[#78350f] font-bold leading-relaxed shadow-2xs">
-          {node.predicted_action}
+          First seen: {node.first_seen || 'Not available from capture'}
+          <br />
+          Last seen: {node.last_seen || 'Not available from capture'}
         </div>
       </div>
 
@@ -79,7 +83,7 @@ export default function NodeDetailsDrawer({ node, onClose }) {
       <div className="grid grid-cols-2 gap-3 text-xs font-mono">
         <div className="p-3 rounded-xl bg-[#fcfaf7] border border-[#ebdcc7]">
           <span className="text-[#7a644c] block text-[10px]">Active Sockets</span>
-          <span className="text-[#221207] font-bold text-sm">{node.active_connections} Streams</span>
+          <span className="text-[#221207] font-bold text-sm">{node.active_connections ?? node.degree ?? 'Not available from capture'} Streams</span>
         </div>
         <div className="p-3 rounded-xl bg-[#fcfaf7] border border-[#ebdcc7]">
           <span className="text-[#7a644c] block text-[10px]">In Attack Vector</span>
@@ -87,6 +91,23 @@ export default function NodeDetailsDrawer({ node, onClose }) {
             {node.is_in_attack_path ? 'YES (Active)' : 'NO (Isolated)'}
           </span>
         </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 text-xs font-mono">
+        <div className="p-3 rounded-xl bg-[#fcfaf7] border border-[#ebdcc7]">
+          <span className="text-[#7a644c] block text-[10px]">In / Out Degree</span>
+          <span className="text-[#221207] font-bold text-sm">{node.in_degree ?? '—'} / {node.out_degree ?? '—'}</span>
+        </div>
+        <div className="p-3 rounded-xl bg-[#fcfaf7] border border-[#ebdcc7]">
+          <span className="text-[#7a644c] block text-[10px]">Packets / Bytes</span>
+          <span className="text-[#221207] font-bold text-sm">{node.packet_count ?? '—'} / {node.byte_count ?? '—'}</span>
+        </div>
+      </div>
+
+      <div className="text-xs font-mono text-[#544230] leading-relaxed">
+        <span className="font-bold">Ports:</span> {node.ports?.length ? node.ports.join(', ') : 'Not available from capture'}
+        <br />
+        <span className="font-bold">Protocols:</span> {node.protocols?.length ? node.protocols.join(', ') : 'Not available from capture'}
       </div>
 
       {/* Proactive Action Notice */}
